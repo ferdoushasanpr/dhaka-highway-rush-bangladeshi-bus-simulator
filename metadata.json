@@ -1,0 +1,6 @@
+{
+  "name": "Dhaka Highway Rush: 3D Bangladeshi Bus Simulator",
+  "description": "High-octane 3D endless highway bus racing game featuring Left-Hand Traffic, iconic Bangladeshi bus liveries, dual chase and cockpit cameras with functional mirrors, and dynamic traffic AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
