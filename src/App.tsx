@@ -12,6 +12,7 @@ import {
   IndicatorState,
   BusLivery,
   GameScoreState,
+  WeatherMode,
 } from './game/types';
 import { BUS_LIVERIES } from './game/proceduralTextures';
 import { HUD } from './components/HUD';
@@ -25,6 +26,7 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState>('title');
   const [cameraMode, setCameraMode] = useState<CameraViewMode>('chase');
   const [highwayMode, setHighwayMode] = useState<HighwayMode>('divided_4lane');
+  const [weatherMode, setWeatherMode] = useState<WeatherMode>('day');
   const [selectedLivery, setSelectedLivery] = useState<BusLivery>(BUS_LIVERIES[0]);
   const [indicator, setIndicator] = useState<IndicatorState>('none');
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -110,6 +112,10 @@ export default function App() {
         // Toggle Hazard Lights
         engineRef.current.setIndicator('hazard');
         setIndicator(engineRef.current.getIndicator());
+      } else if (code === 'KeyN') {
+        // Toggle Weather Mode (Day / Night / Winter Fog)
+        const nextWeather = engineRef.current.toggleWeatherMode();
+        setWeatherMode(nextWeather);
       } else if (code === 'KeyM') {
         // Toggle Mute
         const muted = audioManager.toggleMute();
@@ -219,6 +225,20 @@ export default function App() {
     }
   }, []);
 
+  const handleSelectWeatherMode = useCallback((mode: WeatherMode) => {
+    setWeatherMode(mode);
+    if (engineRef.current) {
+      engineRef.current.setWeatherMode(mode);
+    }
+  }, []);
+
+  const handleToggleWeather = useCallback(() => {
+    if (engineRef.current) {
+      const next = engineRef.current.toggleWeatherMode();
+      setWeatherMode(next);
+    }
+  }, []);
+
   const handleToggleCamera = useCallback(() => {
     if (engineRef.current) {
       const nextCam = engineRef.current.toggleCameraMode();
@@ -267,10 +287,12 @@ export default function App() {
           scoreState={scoreState}
           cameraMode={cameraMode}
           highwayMode={highwayMode}
+          weatherMode={weatherMode}
           indicator={indicator}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
           onToggleCamera={handleToggleCamera}
+          onToggleWeather={handleToggleWeather}
           onToggleHighwayMode={handleSelectHighwayMode}
           onSetIndicator={handleSetIndicator}
           onAirHorn={handleAirHorn}
@@ -285,6 +307,7 @@ export default function App() {
         gameState={gameState}
         scoreState={scoreState}
         highwayMode={highwayMode}
+        weatherMode={weatherMode}
         selectedLivery={selectedLivery}
         onStartGame={handleStartGame}
         onResumeGame={handleResume}
@@ -292,6 +315,7 @@ export default function App() {
         onGoToTitle={handleGoToTitle}
         onSelectLivery={handleSelectLivery}
         onSelectHighwayMode={handleSelectHighwayMode}
+        onSelectWeatherMode={handleSelectWeatherMode}
       />
     </div>
   );

@@ -73,10 +73,8 @@ export function getRoadBounds(mode: HighwayMode): { minX: number; maxX: number }
  */
 export function isInCounterLane(x: number, mode: HighwayMode): boolean {
   if (mode === 'divided_4lane') {
-    // In divided expressway, crossing the divider into oncoming side (X < 0) is counter-lane
     return x < -DIVIDER_WIDTH / 2;
   } else {
-    // In 2-lane undivided, crossing center line into oncoming side (X < 0) is counter-lane
     return x < 0;
   }
 }
@@ -105,7 +103,7 @@ export function getEntityAABB(
   width: number,
   height: number,
   length: number,
-  margin = 0.9 // slight margin to account for rounded bumper contours
+  margin = 0.92 // tight hitbox fidelity
 ): BoundingBox3D {
   const hw = (width * margin) / 2;
   const hh = height / 2;
@@ -123,8 +121,6 @@ export function getEntityAABB(
 
 /**
  * Check if player achieved a near-miss overtake
- * A near miss occurs when player overtakes an NPC at high speed (> 70 km/h)
- * with a close lateral gap (< 0.8m) without colliding.
  */
 export function checkNearMiss(
   playerBox: BoundingBox3D,
@@ -153,43 +149,39 @@ export function calculateOvertakeBonus(playerSpeedKmh: number, isCounterLane: bo
   return isCounterLane ? baseBonus * 2 : baseBonus;
 }
 
-/**
- * Convert m/s to km/h
- */
 export function msToKmh(ms: number): number {
   return Math.round(ms * 3.6);
 }
 
-/**
- * Convert km/h to m/s
- */
 export function kmhToMs(kmh: number): number {
   return kmh / 3.6;
 }
 
 /**
- * Check if a lane at position Z has sufficient gap for safe lane change or spawn
+ * Check if a lane at position Z has sufficient gap for safe lane change or spawn.
+ * Checks both longitudinal gap and lateral proximity of any vehicle currently transitioning.
  */
 export function isLaneClear(
   targetX: number,
   targetZ: number,
   vehicleLength: number,
-  vehicles: Array<{ id: number; x: number; z: number; length: number; isOncoming: boolean }>,
+  vehicles: Array<{ id: number; x: number; z: number; length: number; width?: number; isOncoming: boolean }>,
   ignoreId: number = -1,
-  requiredFrontGap: number = 28,
-  requiredRearGap: number = 22
+  requiredFrontGap: number = 32,
+  requiredRearGap: number = 26
 ): boolean {
   for (const other of vehicles) {
     if (other.id === ignoreId) continue;
-    // Check if in same lane laterally
+    // Check if within lateral zone of the target lane
     const lateralDist = Math.abs(other.x - targetX);
-    if (lateralDist < 2.2) {
+    if (lateralDist < 2.4) {
       // Longitudinal distance
       const zDiff = other.z - targetZ;
-      if (zDiff >= 0 && zDiff < requiredFrontGap + (vehicleLength + other.length) / 2) {
+      const combinedHalfLengths = (vehicleLength + other.length) / 2;
+      if (zDiff >= 0 && zDiff < requiredFrontGap + combinedHalfLengths) {
         return false; // Vehicle ahead in target lane is too close
       }
-      if (zDiff < 0 && Math.abs(zDiff) < requiredRearGap + (vehicleLength + other.length) / 2) {
+      if (zDiff < 0 && Math.abs(zDiff) < requiredRearGap + combinedHalfLengths) {
         return false; // Vehicle behind in target lane is too close
       }
     }
@@ -198,65 +190,169 @@ export function isLaneClear(
 }
 
 /**
- * Strict physics separation for traffic entities to prevent any overlap or clipping
+ * Check if an NPC in active lane change is safe from any lateral collision.
+ * If another vehicle is encroaching into its envelope, returns false so the AI can abort.
+ */
+export function isLaneChangeSafe(
+  npc: TrafficEntity,
+  vehicles: TrafficEntity[],
+  player?: { x: number; z: number; width: number; length: number }
+): boolean {
+  // Check against player
+  if (player && !npc.isOncoming) {
+    const latDist = Math.abs(npc.x - player.x);
+    const longDist = Math.abs(npc.z - player.z);
+    if (latDist < (npc.width + player.width) / 2 + 0.8 && longDist < (npc.length + player.length) / 2 + 3.0) {
+      return false;
+    }
+  }
+
+  // Check against other traffic
+  for (const other of vehicles) {
+    if (other.id === npc.id) continue;
+    const latDist = Math.abs(npc.x - other.x);
+    const longDist = Math.abs(npc.z - other.z);
+    const minLat = (npc.width + other.width) / 2 + 0.7;
+    const minLong = (npc.length + other.length) / 2 + 3.5;
+    if (latDist < minLat && longDist < minLong) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Strict 2D AABB / OBB physics non-penetration separation for traffic entities.
+ * Resolves both lateral side-by-side overlaps and longitudinal rear-end overlaps,
+ * guaranteeing vehicles never intersect or clip into each other or the player.
  */
 export function resolveVehicleOverlaps(
   vehicles: TrafficEntity[],
-  player?: { x: number; z: number; width: number; length: number }
+  player?: { x: number; z: number; width: number; length: number },
+  highwayMode: HighwayMode = 'divided_4lane'
 ) {
-  // Sort by Z coordinate
+  const bounds = getRoadBounds(highwayMode);
   const count = vehicles.length;
-  for (let i = 0; i < count; i++) {
-    const a = vehicles[i];
 
-    // Check against player if provided
-    if (player && !a.isOncoming) {
-      const lateralOverlap = Math.abs(a.x - player.x) < (a.width + player.width) / 2 * 0.92;
-      const minSafeDist = (a.length + player.length) / 2 + 0.8;
-      const zDist = Math.abs(a.z - player.z);
+  // 1. Resolve overlap with Player bus
+  if (player) {
+    for (let i = 0; i < count; i++) {
+      const npc = vehicles[i];
+      if (npc.isOncoming) continue; // Oncoming collisions are handled by crash detector
 
-      if (lateralOverlap && zDist < minSafeDist) {
-        if (a.z < player.z) {
-          // NPC is behind player: push back and match/lower speed
-          a.z = player.z - minSafeDist;
-          a.speed = Math.min(a.speed, kmhToMs(40));
+      const dx = npc.x - player.x;
+      const dz = npc.z - player.z;
+      const minX = (npc.width + player.width) / 2 + 0.2;
+      const minZ = (npc.length + player.length) / 2 + 0.6;
+
+      const overlapX = minX - Math.abs(dx);
+      const overlapZ = minZ - Math.abs(dz);
+
+      if (overlapX > 0 && overlapZ > 0) {
+        // Penetration detected!
+        if (overlapX < overlapZ * 0.7) {
+          // Push NPC away laterally from player
+          const dirX = dx >= 0 ? 1 : -1;
+          npc.x = player.x + dirX * minX;
+          if (npc.isLaneChanging) {
+            npc.isLaneChanging = false;
+            npc.targetLane = npc.currentLane;
+            npc.indicator = 'none';
+          }
         } else {
-          // NPC is ahead of player: push ahead
-          a.z = player.z + minSafeDist;
-        }
-      }
-    }
-
-    for (let j = i + 1; j < count; j++) {
-      const b = vehicles[j];
-      // Only vehicles traveling in same direction can follow each other
-      if (a.isOncoming !== b.isOncoming) continue;
-
-      const lateralDist = Math.abs(a.x - b.x);
-      const minLateral = (a.width + b.width) / 2 * 0.90;
-
-      if (lateralDist < minLateral) {
-        const minZDist = (a.length + b.length) / 2 + 1.5;
-        const zDist = Math.abs(a.z - b.z);
-
-        if (zDist < minZDist) {
-          // Overlap detected! Separate them strictly
-          if (a.isOncoming) {
-            // Oncoming moves in -Z
-            const front = a.z < b.z ? a : b;
-            const rear = a.z < b.z ? b : a;
-            rear.z = front.z + minZDist;
-            rear.speed = Math.min(rear.speed, front.speed);
+          // Push NPC away longitudinally
+          if (dz > 0) {
+            npc.z = player.z + minZ;
           } else {
-            // Forward moves in +Z
-            const front = a.z > b.z ? a : b;
-            const rear = a.z > b.z ? b : a;
-            rear.z = front.z - minZDist;
-            rear.speed = Math.min(rear.speed, front.speed);
+            npc.z = player.z - minZ;
+            npc.speed = Math.min(npc.speed, kmhToMs(30));
           }
         }
       }
     }
+  }
+
+  // 2. Pairwise Traffic Separation
+  for (let i = 0; i < count; i++) {
+    const a = vehicles[i];
+
+    for (let j = i + 1; j < count; j++) {
+      const b = vehicles[j];
+
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const minX = (a.width + b.width) / 2 + 0.35;
+      const minZ = (a.length + b.length) / 2 + 0.90;
+
+      const overlapX = minX - Math.abs(dx);
+      const overlapZ = minZ - Math.abs(dz);
+
+      if (overlapX > 0 && overlapZ > 0) {
+        // Normalize penetration by bounding box dimensions
+        const normOverlapX = overlapX / minX;
+        const normOverlapZ = overlapZ / minZ;
+
+        // They are penetrating each other!
+        if (a.isOncoming === b.isOncoming) {
+          // Same direction:
+          if (normOverlapX < normOverlapZ && Math.abs(dx) > 0.6) {
+            // Lateral side-swipe conflict during lane change or merge
+            const pushDist = overlapX * 0.5 + 0.05;
+            const dirX = dx >= 0 ? 1 : -1;
+            b.x += pushDist * dirX;
+            a.x -= pushDist * dirX;
+
+            // Abort lane changes on collision
+            if (a.isLaneChanging) {
+              a.isLaneChanging = false;
+              a.targetLane = a.currentLane;
+              a.indicator = 'none';
+            }
+            if (b.isLaneChanging) {
+              b.isLaneChanging = false;
+              b.targetLane = b.currentLane;
+              b.indicator = 'none';
+            }
+          } else {
+            // Front-to-back following conflict (same lane or high lateral overlap):
+            if (a.isOncoming) {
+              // Moving in -Z: lower Z is front
+              const front = a.z < b.z ? a : b;
+              const rear = front === a ? b : a;
+              rear.z = front.z + minZ;
+              rear.speed = Math.min(rear.speed, Math.max(0, front.speed - 1.5));
+            } else {
+              // Moving in +Z: higher Z is front
+              const front = a.z > b.z ? a : b;
+              const rear = front === a ? b : a;
+              rear.z = front.z - minZ;
+              rear.speed = Math.min(rear.speed, Math.max(0, front.speed - 1.5));
+            }
+          }
+        } else {
+          // Oncoming vs Forward (e.g. Counter-lane overtaking conflict):
+          // Push apart laterally so they don't clip through each other!
+          const dirX = dx >= 0 ? 1 : -1;
+          const pushDist = overlapX * 0.5 + 0.1;
+          b.x += pushDist * dirX;
+          a.x -= pushDist * dirX;
+          a.speed = Math.max(0, a.speed - 4.0);
+          b.speed = Math.max(0, b.speed - 4.0);
+          if (a.isLaneChanging) {
+            a.isLaneChanging = false;
+            a.targetLane = a.currentLane;
+          }
+          if (b.isLaneChanging) {
+            b.isLaneChanging = false;
+            b.targetLane = b.currentLane;
+          }
+        }
+      }
+    }
+
+    // Clamp NPC within highway shoulders
+    a.x = Math.max(bounds.minX + a.width / 2, Math.min(bounds.maxX - a.width / 2, a.x));
   }
 }
 
@@ -303,4 +399,3 @@ export function getArchetypeSpecs(archetype: VehicleArchetype) {
       };
   }
 }
-

@@ -13,6 +13,7 @@ import {
   VehicleArchetype,
   BusLivery,
   GameScoreState,
+  WeatherMode,
 } from './types';
 import {
   getLaneConfiguration,
@@ -27,6 +28,7 @@ import {
   getArchetypeSpecs,
   LaneInfo,
   isLaneClear,
+  isLaneChangeSafe,
   resolveVehicleOverlaps,
 } from './trafficRules';
 import {
@@ -63,9 +65,16 @@ export class GameEngine {
   private isRunning: boolean = false;
   private isPaused: boolean = false;
 
-  // Environment & Lighting
+  // Environment & Weather
+  private weatherMode: WeatherMode = 'day';
   private sunLight: THREE.DirectionalLight;
   private hemiLight: THREE.HemisphereLight;
+  private playerHeadlightL!: THREE.SpotLight;
+  private playerHeadlightR!: THREE.SpotLight;
+  private headlightTargetL!: THREE.Object3D;
+  private headlightTargetR!: THREE.Object3D;
+  private headlightConeL!: THREE.Mesh;
+  private headlightConeR!: THREE.Mesh;
   private mirrorManager: MirrorManager;
 
   // Road Chunks System
@@ -189,6 +198,43 @@ export class GameEngine {
     this.hemiLight = new THREE.HemisphereLight(0xb1e1ff, 0x166534, 1.1);
     this.scene.add(this.hemiLight);
 
+    // Projector Headlight Spotlights on the Bus (Left + Right)
+    this.playerHeadlightL = new THREE.SpotLight(0xfffaed, 0.5, 120, 0.42, 0.6, 1.2);
+    this.playerHeadlightL.castShadow = !this.isSoftwareGl;
+    this.playerHeadlightR = new THREE.SpotLight(0xfffaed, 0.5, 120, 0.42, 0.6, 1.2);
+    this.playerHeadlightR.castShadow = !this.isSoftwareGl;
+
+    this.headlightTargetL = new THREE.Object3D();
+    this.headlightTargetR = new THREE.Object3D();
+    this.scene.add(this.headlightTargetL);
+    this.scene.add(this.headlightTargetR);
+    this.playerHeadlightL.target = this.headlightTargetL;
+    this.playerHeadlightR.target = this.headlightTargetR;
+
+    this.scene.add(this.playerHeadlightL);
+    this.scene.add(this.playerHeadlightR);
+
+    // Volumetric Light Cones for Night and Winter Fog
+    const coneGeo = new THREE.ConeGeometry(3.5, 38, 16, 1, true);
+    coneGeo.rotateX(Math.PI / 2);
+    coneGeo.translate(0, 0, 19);
+    const coneMatL = new THREE.MeshBasicMaterial({
+      color: 0xfffbeb,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const coneMatR = coneMatL.clone();
+
+    this.headlightConeL = new THREE.Mesh(coneGeo, coneMatL);
+    this.headlightConeR = new THREE.Mesh(coneGeo, coneMatR);
+    this.headlightConeL.visible = false;
+    this.headlightConeR.visible = false;
+    this.scene.add(this.headlightConeL);
+    this.scene.add(this.headlightConeR);
+
     // 6. Mirror Manager
     this.mirrorManager = new MirrorManager();
 
@@ -258,6 +304,80 @@ export class GameEngine {
     else if (this.cameraMode === 'cockpit') this.setCameraMode('hood');
     else this.setCameraMode('chase');
     return this.cameraMode;
+  }
+
+  public setWeatherMode(mode: WeatherMode) {
+    this.weatherMode = mode;
+    if (mode === 'day') {
+      const sky = new THREE.Color(0x87ceeb);
+      this.scene.background = sky;
+      this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.007);
+      this.sunLight.color.setHex(0xfffaed);
+      this.sunLight.intensity = 2.2;
+      this.hemiLight.color.setHex(0xb1e1ff);
+      this.hemiLight.groundColor.setHex(0x166534);
+      this.hemiLight.intensity = 1.1;
+
+      this.playerHeadlightL.intensity = 0.5;
+      this.playerHeadlightR.intensity = 0.5;
+      this.headlightConeL.visible = false;
+      this.headlightConeR.visible = false;
+    } else if (mode === 'night') {
+      const nightSky = new THREE.Color(0x060913);
+      this.scene.background = nightSky;
+      this.scene.fog = new THREE.FogExp2(0x060913, 0.012);
+      this.sunLight.color.setHex(0x38bdf8);
+      this.sunLight.intensity = 0.35;
+      this.hemiLight.color.setHex(0x0f172a);
+      this.hemiLight.groundColor.setHex(0x022c22);
+      this.hemiLight.intensity = 0.28;
+
+      this.playerHeadlightL.color.setHex(0xfffaed);
+      this.playerHeadlightR.color.setHex(0xfffaed);
+      this.playerHeadlightL.intensity = 8.5;
+      this.playerHeadlightR.intensity = 8.5;
+
+      (this.headlightConeL.material as THREE.MeshBasicMaterial).color.setHex(0xfffbeb);
+      (this.headlightConeL.material as THREE.MeshBasicMaterial).opacity = 0.16;
+      (this.headlightConeR.material as THREE.MeshBasicMaterial).color.setHex(0xfffbeb);
+      (this.headlightConeR.material as THREE.MeshBasicMaterial).opacity = 0.16;
+      this.headlightConeL.visible = true;
+      this.headlightConeR.visible = true;
+    } else if (mode === 'fog') {
+      // Signature Bangladeshi winter river-basin morning fog
+      const fogSky = new THREE.Color(0x94a3b8);
+      this.scene.background = fogSky;
+      this.scene.fog = new THREE.FogExp2(0x94a3b8, 0.024);
+      this.sunLight.color.setHex(0xfef08a);
+      this.sunLight.intensity = 0.85;
+      this.hemiLight.color.setHex(0x94a3b8);
+      this.hemiLight.groundColor.setHex(0x334155);
+      this.hemiLight.intensity = 0.65;
+
+      // Piercing warm amber fog lights
+      this.playerHeadlightL.color.setHex(0xfbbf24);
+      this.playerHeadlightR.color.setHex(0xfbbf24);
+      this.playerHeadlightL.intensity = 7.0;
+      this.playerHeadlightR.intensity = 7.0;
+
+      (this.headlightConeL.material as THREE.MeshBasicMaterial).color.setHex(0xfbbf24);
+      (this.headlightConeL.material as THREE.MeshBasicMaterial).opacity = 0.22;
+      (this.headlightConeR.material as THREE.MeshBasicMaterial).color.setHex(0xfbbf24);
+      (this.headlightConeR.material as THREE.MeshBasicMaterial).opacity = 0.22;
+      this.headlightConeL.visible = true;
+      this.headlightConeR.visible = true;
+    }
+  }
+
+  public getWeatherMode(): WeatherMode {
+    return this.weatherMode;
+  }
+
+  public toggleWeatherMode(): WeatherMode {
+    if (this.weatherMode === 'day') this.setWeatherMode('night');
+    else if (this.weatherMode === 'night') this.setWeatherMode('fog');
+    else this.setWeatherMode('day');
+    return this.weatherMode;
   }
 
   public setIndicator(indicator: IndicatorState) {
@@ -503,6 +623,21 @@ export class GameEngine {
     this.playerBusMesh.rotation.z = bodyRoll;
     this.playerBusMesh.rotation.y = this.playerSteerAngle * 0.04;
     this.playerBusMesh.position.set(this.playerX, 0, this.playerZ);
+
+    // Update Projector Headlights and Volumetric Cones
+    const frontZ = this.playerZ + 5.8;
+    this.playerHeadlightL.position.set(this.playerX + 0.95, 0.82, frontZ);
+    this.headlightTargetL.position.set(this.playerX + 0.95 + this.playerSteerAngle * 1.5, 0.1, frontZ + 55);
+
+    this.playerHeadlightR.position.set(this.playerX - 0.95, 0.82, frontZ);
+    this.headlightTargetR.position.set(this.playerX - 0.95 + this.playerSteerAngle * 1.5, 0.1, frontZ + 55);
+
+    if (this.headlightConeL.visible) {
+      this.headlightConeL.position.set(this.playerX + 0.95, 0.82, frontZ);
+      this.headlightConeL.rotation.y = this.playerSteerAngle * 0.05;
+      this.headlightConeR.position.set(this.playerX - 0.95, 0.82, frontZ);
+      this.headlightConeR.rotation.y = this.playerSteerAngle * 0.05;
+    }
 
     // Rotate driver's steering wheel in cockpit
     if (this.playerBusMesh.steeringWheel) {
@@ -750,12 +885,16 @@ export class GameEngine {
     }
 
     // 2. Strict Physics Separation: Prevent any vehicle overlap or clipping
-    resolveVehicleOverlaps(this.trafficEntities, {
-      x: this.playerX,
-      z: this.playerZ,
-      width: 2.6,
-      length: 11.5,
-    });
+    resolveVehicleOverlaps(
+      this.trafficEntities,
+      {
+        x: this.playerX,
+        z: this.playerZ,
+        width: 2.6,
+        length: 11.5,
+      },
+      this.highwayMode
+    );
 
     // 3. Update mesh positions, lighting, collisions, and scoring
     for (let i = this.trafficEntities.length - 1; i >= 0; i--) {
@@ -865,6 +1004,27 @@ export class GameEngine {
 
     // 2. Active Lane Change in progress
     if (npc.isLaneChanging) {
+      // Continuous spatial check: If another vehicle encroaches into the lane transition corridor, abort immediately!
+      const isSafe = isLaneChangeSafe(npc, this.trafficEntities, {
+        x: this.playerX,
+        z: this.playerZ,
+        width: 2.6,
+        length: 11.5,
+      });
+
+      if (!isSafe) {
+        // Abort lane change! Return to original lane immediately
+        npc.isLaneChanging = false;
+        npc.targetLane = npc.currentLane;
+        npc.indicator = 'none';
+        npc.laneChangeProgress = 0;
+        const currentLaneInfo = this.lanes.find((l) => l.index === npc.currentLane);
+        if (currentLaneInfo) {
+          npc.x = THREE.MathUtils.damp(npc.x, currentLaneInfo.centerX, 5.0, dt);
+        }
+        return;
+      }
+
       npc.laneChangeProgress += dt * 0.75; // ~1.3s to complete lane change
       const targetLaneInfo = this.lanes.find((l) => l.index === npc.targetLane);
       if (targetLaneInfo) {
@@ -884,16 +1044,33 @@ export class GameEngine {
     if (npc.indicatorTimer > 0) {
       npc.indicatorTimer -= dt;
       if (npc.indicatorTimer <= 0) {
-        // Signaling period finished -> Double check target lane is still clear!
+        // Signaling period finished -> Double check target lane is still clear with generous gaps!
         const targetLaneInfo = this.lanes.find((l) => l.index === npc.targetLane);
-        if (
+        const clear =
           targetLaneInfo &&
-          isLaneClear(targetLaneInfo.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 20, 16)
-        ) {
+          isLaneClear(
+            targetLaneInfo.centerX,
+            npc.z,
+            npc.length,
+            this.trafficEntities,
+            npc.id,
+            32,
+            26
+          );
+
+        // Ensure no other entity is currently targeting the same lane slot
+        const noConflict = !this.trafficEntities.some(
+          (other) =>
+            other.id !== npc.id &&
+            other.targetLane === npc.targetLane &&
+            Math.abs(other.z - npc.z) < 32
+        );
+
+        if (clear && noConflict) {
           npc.isLaneChanging = true;
           npc.laneChangeProgress = 0;
         } else {
-          // Target lane blocked: cancel lane change and stay safe
+          // Target lane blocked: cancel lane change and stay safely in lane
           npc.indicator = 'none';
           npc.targetLane = npc.currentLane;
         }
@@ -911,7 +1088,7 @@ export class GameEngine {
       if (other.id === npc.id || other.isOncoming !== npc.isOncoming) continue;
       const isSameLane = Math.abs(other.x - npc.x) < 2.0;
       const zDiff = npc.isOncoming ? npc.z - other.z : other.z - npc.z;
-      if (isSameLane && zDiff > 0 && zDiff < 36 && zDiff < frontDistance) {
+      if (isSameLane && zDiff > 0 && zDiff < 38 && zDiff < frontDistance) {
         frontDistance = zDiff;
         frontSpeed = other.speed;
         frontFound = true;
@@ -922,7 +1099,7 @@ export class GameEngine {
     if (!npc.isOncoming) {
       const isSameLaneAsPlayer = Math.abs(this.playerX - npc.x) < 2.2;
       const zDiffToPlayer = this.playerZ - npc.z;
-      if (isSameLaneAsPlayer && zDiffToPlayer > 0 && zDiffToPlayer < 36 && zDiffToPlayer < frontDistance) {
+      if (isSameLaneAsPlayer && zDiffToPlayer > 0 && zDiffToPlayer < 38 && zDiffToPlayer < frontDistance) {
         frontDistance = zDiffToPlayer;
         frontSpeed = this.playerSpeed;
         frontFound = true;
@@ -931,10 +1108,10 @@ export class GameEngine {
 
     if (frontFound) {
       // Progressive Braking to prevent any rear-end collision
-      if (frontDistance < 14) {
+      if (frontDistance < 15) {
         // Emergency hard brake
-        npc.speed = Math.max(frontSpeed - 2.5, 0);
-      } else if (frontDistance < 22) {
+        npc.speed = Math.max(frontSpeed - 3.0, 0);
+      } else if (frontDistance < 24) {
         // Firm deceleration
         npc.speed = Math.min(npc.speed, frontSpeed * 0.85);
       } else {
@@ -948,12 +1125,11 @@ export class GameEngine {
           // In divided 4-lane LHT:
           // Lane 0: Outer Left (Slow, X ~ +6.4)
           // Lane 1: Inner Left (Fast, X ~ +2.8)
-          // If in Lane 0, move to Lane 1 (move right towards divider, indicator 'right')
           if (npc.currentLane === 0) {
             const lane1 = this.lanes.find((l) => l.index === 1);
             if (
               lane1 &&
-              isLaneClear(lane1.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 28, 20)
+              isLaneClear(lane1.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 34, 26)
             ) {
               npc.targetLane = 1;
               npc.indicator = 'right';
@@ -965,10 +1141,10 @@ export class GameEngine {
           // Forward lane is Lane 0 (+X), Counter-lane is Lane 1 (-X)
           if (npc.currentLane === 0 && !npc.isOvertakingCounterLane) {
             const counterLane = this.lanes.find((l) => l.index === 1);
-            // Require 75m clearance in counter lane because of closing speed
+            // Require 85m clearance in counter lane because of closing speed
             if (
               counterLane &&
-              isLaneClear(counterLane.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 75, 30)
+              isLaneClear(counterLane.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 85, 35)
             ) {
               npc.targetLane = 1;
               npc.indicator = 'right';
@@ -995,7 +1171,7 @@ export class GameEngine {
         if (
           lane0 &&
           Math.random() < 0.015 &&
-          isLaneClear(lane0.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 30, 25)
+          isLaneClear(lane0.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 32, 26)
         ) {
           npc.targetLane = 0;
           npc.indicator = 'left';
@@ -1003,12 +1179,29 @@ export class GameEngine {
         }
       }
 
-      // In 2-lane mode: return to forward lane (Lane 0) after counter-lane overtake
+      // In 2-lane mode: monitor oncoming traffic while overtaking in counter-lane!
       if (npc.isOvertakingCounterLane && npc.currentLane === 1) {
+        // Continuous check for oncoming vehicle in counter-lane
+        const oncomingThreat = this.trafficEntities.find(
+          (other) => other.isOncoming && Math.abs(other.x - npc.x) < 2.5 && other.z > npc.z && other.z - npc.z < 85
+        );
+        if (oncomingThreat) {
+          // Emergency return to Lane 0
+          const lane0 = this.lanes.find((l) => l.index === 0);
+          if (lane0) {
+            npc.targetLane = 0;
+            npc.indicator = 'left';
+            npc.isLaneChanging = true;
+            npc.isOvertakingCounterLane = false;
+            npc.speed = Math.max(0, npc.speed - 3.0);
+            return;
+          }
+        }
+
         const lane0 = this.lanes.find((l) => l.index === 0);
         if (
           lane0 &&
-          isLaneClear(lane0.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 25, 20)
+          isLaneClear(lane0.centerX, npc.z, npc.length, this.trafficEntities, npc.id, 28, 22)
         ) {
           npc.targetLane = 0;
           npc.indicator = 'left';

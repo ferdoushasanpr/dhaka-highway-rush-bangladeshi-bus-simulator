@@ -7,6 +7,8 @@ export type HighwayMode = 'divided_4lane' | 'undivided_2lane';
 
 export type CameraViewMode = 'chase' | 'cockpit' | 'hood';
 
+export type WeatherMode = 'day' | 'night' | 'fog';
+
 export type IndicatorState = 'none' | 'left' | 'right' | 'hazard';
 
 export type GameState = 'title' | 'playing' | 'paused' | 'gameover';

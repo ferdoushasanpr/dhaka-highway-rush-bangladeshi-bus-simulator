@@ -15,7 +15,8 @@ import {
   calculateOvertakeBonus,
   msToKmh,
   kmhToMs,
-  getArchetypeSpecs
+  getArchetypeSpecs,
+  resolveVehicleOverlaps,
 } from './trafficRules';
 
 test('trafficRules: LHT lane configuration for 4-lane divided expressway', () => {
@@ -97,3 +98,112 @@ test('trafficRules: vehicle archetype specs', () => {
   assert.ok(cng.minSpeedKmh < bus.minSpeedKmh);
   assert.ok(cng.honkYieldProbability > bus.honkYieldProbability);
 });
+
+test('trafficRules: resolveVehicleOverlaps separates overlapping vehicles', () => {
+  const v1 = {
+    id: 1,
+    archetype: 'bus' as const,
+    x: 4.5,
+    y: 0,
+    z: 100,
+    speed: 20,
+    targetSpeed: 20,
+    width: 2.6,
+    length: 11.5,
+    height: 3.4,
+    currentLane: 0,
+    targetLane: 0,
+    isLaneChanging: false,
+    laneChangeProgress: 0,
+    indicator: 'none' as const,
+    indicatorTimer: 0,
+    isOncoming: false,
+    isOvertakingCounterLane: false,
+    counterLaneTimer: 0,
+    honkedReactionTimer: 0,
+  };
+  const v2 = {
+    id: 2,
+    archetype: 'bus' as const,
+    x: 4.5,
+    y: 0,
+    z: 103, // severely overlapping in Z
+    speed: 25,
+    targetSpeed: 25,
+    width: 2.6,
+    length: 11.5,
+    height: 3.4,
+    currentLane: 0,
+    targetLane: 0,
+    isLaneChanging: false,
+    laneChangeProgress: 0,
+    indicator: 'none' as const,
+    indicatorTimer: 0,
+    isOncoming: false,
+    isOvertakingCounterLane: false,
+    counterLaneTimer: 0,
+    honkedReactionTimer: 0,
+  };
+
+  resolveVehicleOverlaps([v1, v2], undefined, 'divided_4lane');
+  // Must separate along Z so they don't overlap
+  const zDiff = Math.abs(v1.z - v2.z);
+  const minRequiredZ = (v1.length + v2.length) / 2 + 0.90;
+  assert.ok(zDiff >= minRequiredZ, `zDiff ${zDiff} should be >= ${minRequiredZ}`);
+});
+
+test('trafficRules: resolveVehicleOverlaps separates lateral lane change overlap', () => {
+  const v1 = {
+    id: 1,
+    archetype: 'bus' as const,
+    x: 4.5,
+    y: 0,
+    z: 100,
+    speed: 20,
+    targetSpeed: 20,
+    width: 2.6,
+    length: 11.5,
+    height: 3.4,
+    currentLane: 0,
+    targetLane: 1,
+    isLaneChanging: true,
+    laneChangeProgress: 0.5,
+    indicator: 'left' as const,
+    indicatorTimer: 0,
+    isOncoming: false,
+    isOvertakingCounterLane: false,
+    counterLaneTimer: 0,
+    honkedReactionTimer: 0,
+  };
+  const v2 = {
+    id: 2,
+    archetype: 'bus' as const,
+    x: 3.5, // Adjacent lateral collision
+    y: 0,
+    z: 100, // exact same longitudinal position
+    speed: 20,
+    targetSpeed: 20,
+    width: 2.6,
+    length: 11.5,
+    height: 3.4,
+    currentLane: 1,
+    targetLane: 1,
+    isLaneChanging: false,
+    laneChangeProgress: 0,
+    indicator: 'none' as const,
+    indicatorTimer: 0,
+    isOncoming: false,
+    isOvertakingCounterLane: false,
+    counterLaneTimer: 0,
+    honkedReactionTimer: 0,
+  };
+
+  resolveVehicleOverlaps([v1, v2], undefined, 'divided_4lane');
+  // Lateral overlap must be resolved and lane change aborted
+  const xDiff = Math.abs(v1.x - v2.x);
+  const minRequiredX = (v1.width + v2.width) / 2 + 0.35;
+  assert.ok(xDiff >= minRequiredX, `xDiff ${xDiff} should be >= ${minRequiredX}`);
+  assert.equal(v1.isLaneChanging, false, 'Lane change should abort on collision');
+});
+
+

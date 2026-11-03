@@ -4,17 +4,19 @@
  */
 
 import React from 'react';
-import { CameraViewMode, GameScoreState, HighwayMode, IndicatorState } from '../game/types';
-import { Volume2, VolumeX, Pause, Camera, Radio, AlertTriangle } from 'lucide-react';
+import { CameraViewMode, GameScoreState, HighwayMode, IndicatorState, WeatherMode } from '../game/types';
+import { Volume2, VolumeX, Pause, Camera, Radio, AlertTriangle, Sun, Moon, CloudFog } from 'lucide-react';
 
 interface HUDProps {
   scoreState: GameScoreState;
   cameraMode: CameraViewMode;
   highwayMode: HighwayMode;
+  weatherMode: WeatherMode;
   indicator: IndicatorState;
   isMuted: boolean;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  onToggleWeather: () => void;
   onToggleHighwayMode: (mode: HighwayMode) => void;
   onSetIndicator: (indicator: IndicatorState) => void;
   onAirHorn: () => void;
@@ -27,10 +29,12 @@ export const HUD: React.FC<HUDProps> = ({
   scoreState,
   cameraMode,
   highwayMode,
+  weatherMode,
   indicator,
   isMuted,
   onToggleMute,
   onToggleCamera,
+  onToggleWeather,
   onToggleHighwayMode,
   onSetIndicator,
   onAirHorn,
@@ -98,7 +102,7 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
         )}
 
-        {/* Right Utility Cluster: Highway Mode, Camera, Mute, Pause */}
+        {/* Right Utility Cluster: Highway Mode, Weather, Camera, Mute, Pause */}
         <div className="flex items-center gap-2 pointer-events-auto">
           {/* Highway Mode Switcher */}
           <div className="flex bg-neutral-900/90 border border-neutral-700 rounded-lg p-0.5 text-xs font-semibold">
@@ -125,6 +129,21 @@ export const HUD: React.FC<HUDProps> = ({
               ২-লেন হাইওয়ে
             </button>
           </div>
+
+          {/* Weather / Time-of-Day Switcher */}
+          <button
+            onClick={onToggleWeather}
+            className="bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 p-2 rounded-lg transition shadow flex items-center gap-1 text-xs font-bold"
+            title="আবহাওয়া সুইচ: দিন / রাত / কুয়াশা (N)"
+            aria-label="Toggle weather mode"
+          >
+            {weatherMode === 'day' && <Sun className="w-4 h-4 text-amber-400" />}
+            {weatherMode === 'night' && <Moon className="w-4 h-4 text-indigo-400" />}
+            {weatherMode === 'fog' && <CloudFog className="w-4 h-4 text-slate-300" />}
+            <span className="hidden sm:inline">
+              {weatherMode === 'day' ? 'দিন' : weatherMode === 'night' ? 'রাত' : 'কুয়াশা'}
+            </span>
+          </button>
 
           {/* Camera View Mode */}
           <button

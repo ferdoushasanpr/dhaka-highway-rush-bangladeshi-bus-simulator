@@ -4,14 +4,15 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { GameState, HighwayMode, BusLivery, GameScoreState } from '../game/types';
+import { GameState, HighwayMode, BusLivery, GameScoreState, WeatherMode } from '../game/types';
 import { BUS_LIVERIES } from '../game/proceduralTextures';
-import { Play, RotateCcw, Home, ShieldAlert, Award } from 'lucide-react';
+import { Play, RotateCcw, Home, ShieldAlert, Award, Sun, Moon, CloudFog } from 'lucide-react';
 
 interface GameShellProps {
   gameState: GameState;
   scoreState: GameScoreState;
   highwayMode: HighwayMode;
+  weatherMode: WeatherMode;
   selectedLivery: BusLivery;
   onStartGame: () => void;
   onResumeGame: () => void;
@@ -19,12 +20,14 @@ interface GameShellProps {
   onGoToTitle: () => void;
   onSelectLivery: (livery: BusLivery) => void;
   onSelectHighwayMode: (mode: HighwayMode) => void;
+  onSelectWeatherMode: (mode: WeatherMode) => void;
 }
 
 export const GameShell: React.FC<GameShellProps> = ({
   gameState,
   scoreState,
   highwayMode,
+  weatherMode,
   selectedLivery,
   onStartGame,
   onResumeGame,
@@ -32,6 +35,7 @@ export const GameShell: React.FC<GameShellProps> = ({
   onGoToTitle,
   onSelectLivery,
   onSelectHighwayMode,
+  onSelectWeatherMode,
 }) => {
   // Sync document.body.dataset.state
   useEffect(() => {
@@ -167,6 +171,53 @@ export const GameShell: React.FC<GameShellProps> = ({
                 <div className="text-xs text-neutral-400 mt-1">
                   অবিভক্ত হাইওয়ে: ট্রাক ও সিএনজি অতিক্রম করতে অনকামিং লেনে কাউন্টার ওভারটেক! ২ গুণ বেশি পয়েন্ট।
                 </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Weather & Time-of-Day Selector */}
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 block mb-2">
+              আবহাওয়া ও সময় (WEATHER & ENVIRONMENT)
+            </label>
+            <div className="grid grid-cols-3 gap-2.5">
+              <button
+                onClick={() => onSelectWeatherMode('day')}
+                className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  weatherMode === 'day'
+                    ? 'border-amber-500 bg-amber-950/40 shadow'
+                    : 'border-neutral-800 bg-neutral-800/60 hover:border-neutral-600'
+                }`}
+              >
+                <Sun className="w-5 h-5 text-amber-400" />
+                <span className="text-xs font-bold text-white">রৌদ্রোজ্জ্বল দিন</span>
+                <span className="text-[10px] text-neutral-400">Daytime Sunny</span>
+              </button>
+
+              <button
+                onClick={() => onSelectWeatherMode('night')}
+                className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  weatherMode === 'night'
+                    ? 'border-indigo-500 bg-indigo-950/40 shadow'
+                    : 'border-neutral-800 bg-neutral-800/60 hover:border-neutral-600'
+                }`}
+              >
+                <Moon className="w-5 h-5 text-indigo-400" />
+                <span className="text-xs font-bold text-white">গভীর রাত</span>
+                <span className="text-[10px] text-neutral-400">Night Headlights</span>
+              </button>
+
+              <button
+                onClick={() => onSelectWeatherMode('fog')}
+                className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 ${
+                  weatherMode === 'fog'
+                    ? 'border-slate-400 bg-slate-900/60 shadow'
+                    : 'border-neutral-800 bg-neutral-800/60 hover:border-neutral-600'
+                }`}
+              >
+                <CloudFog className="w-5 h-5 text-slate-300" />
+                <span className="text-xs font-bold text-white">শীতের কুয়াশা</span>
+                <span className="text-[10px] text-neutral-400">Winter Fog</span>
               </button>
             </div>
           </div>
