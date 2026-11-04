@@ -13,6 +13,7 @@ import {
   createTruckArtTexture,
   createCNGTexture,
   createHighwaySignTexture,
+  createAsphaltTexture,
 } from './proceduralTextures';
 import { LANE_WIDTH, DIVIDER_WIDTH, SHOULDER_WIDTH } from './trafficRules';
 
@@ -707,6 +708,156 @@ export function createLegunaMesh(): VehicleMeshObject {
 }
 
 /**
+ * Creates Toyota HiAce / Noah Express Microbus (Dhaka Highway private commuter)
+ */
+export function createMicrobusMesh(): VehicleMeshObject {
+  const microbus = new THREE.Group() as VehicleMeshObject;
+  const indicatorLeftMesh: THREE.Mesh[] = [];
+  const indicatorRightMesh: THREE.Mesh[] = [];
+  const wheels: THREE.Group[] = [];
+
+  const width = 1.85;
+  const length = 4.85;
+  const height = 2.05;
+
+  // 1. Sleek Van Body (White / Silver metallic with dark skirts)
+  const bodyGeo = new THREE.BoxGeometry(width, 1.35, length);
+  const microbusMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9, // Pearl white / light silver
+    metalness: 0.35,
+    roughness: 0.3,
+  });
+  const body = new THREE.Mesh(bodyGeo, microbusMat);
+  body.position.set(0, 1.05, 0);
+  body.castShadow = true;
+  microbus.add(body);
+
+  // Aerodynamic nose slope
+  const noseGeo = new THREE.BoxGeometry(width - 0.1, 0.65, 0.8);
+  const nose = new THREE.Mesh(noseGeo, microbusMat);
+  nose.position.set(0, 0.72, length / 2 - 0.2);
+  nose.rotation.x = -0.15;
+  microbus.add(nose);
+
+  // Front chrome grille
+  const grilleGeo = new THREE.BoxGeometry(width - 0.5, 0.28, 0.08);
+  const grille = new THREE.Mesh(grilleGeo, chromeMat);
+  grille.position.set(0, 0.65, length / 2 + 0.05);
+  microbus.add(grille);
+
+  // Front Windshield
+  const windshieldGeo = new THREE.BoxGeometry(width - 0.2, 0.65, 0.06);
+  const windshield = new THREE.Mesh(windshieldGeo, glassMat);
+  windshield.position.set(0, 1.35, length / 2 - 0.5);
+  windshield.rotation.x = 0.25;
+  microbus.add(windshield);
+
+  // Side Glass windows band
+  const sideGlassGeo = new THREE.BoxGeometry(width + 0.04, 0.52, length - 1.4);
+  const sideGlass = new THREE.Mesh(sideGlassGeo, glassMat);
+  sideGlass.position.set(0, 1.35, -0.4);
+  microbus.add(sideGlass);
+
+  // Rear Glass
+  const rearGlassGeo = new THREE.BoxGeometry(width - 0.25, 0.5, 0.06);
+  const rearGlass = new THREE.Mesh(rearGlassGeo, glassMat);
+  rearGlass.position.set(0, 1.35, -length / 2 + 0.02);
+  microbus.add(rearGlass);
+
+  // Headlights
+  const headGeo = new THREE.BoxGeometry(0.3, 0.18, 0.06);
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.9,
+  });
+  const headL = new THREE.Mesh(headGeo, headMat);
+  headL.position.set(-width / 2 + 0.25, 0.75, length / 2 + 0.02);
+  microbus.add(headL);
+
+  const headR = new THREE.Mesh(headGeo, headMat);
+  headR.position.set(width / 2 - 0.25, 0.75, length / 2 + 0.02);
+  microbus.add(headR);
+
+  // Tail lights
+  const tailGeo = new THREE.BoxGeometry(0.2, 0.45, 0.06);
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0xdc2626,
+    emissive: 0x991b1b,
+    emissiveIntensity: 0.6,
+  });
+  const tailL = new THREE.Mesh(tailGeo, tailMat);
+  tailL.position.set(-width / 2 + 0.18, 1.05, -length / 2 - 0.01);
+  microbus.add(tailL);
+
+  const tailR = new THREE.Mesh(tailGeo, tailMat);
+  tailR.position.set(width / 2 - 0.18, 1.05, -length / 2 - 0.01);
+  microbus.add(tailR);
+
+  // 4 Wheels
+  const wheelPositions = [
+    { x: -width / 2 + 0.12, z: length / 2 - 1.1 },
+    { x: width / 2 - 0.12, z: length / 2 - 1.1 },
+    { x: -width / 2 + 0.12, z: -length / 2 + 1.2 },
+    { x: width / 2 - 0.12, z: -length / 2 + 1.2 },
+  ];
+
+  wheelPositions.forEach((pos) => {
+    const wheel = new THREE.Group();
+    const tire = new THREE.Mesh(tireGeo, rubberMat);
+    tire.scale.set(0.7, 0.7, 0.7);
+    tire.castShadow = true;
+    wheel.add(tire);
+
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.scale.set(0.7, 0.7, 0.7);
+    wheel.add(rim);
+
+    wheel.position.set(pos.x, 0.4, pos.z);
+    microbus.add(wheel);
+    wheels.push(wheel);
+  });
+
+  // Turn Indicators
+  const indGeo = new THREE.BoxGeometry(0.18, 0.14, 0.06);
+  const indLeftMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0x000000 });
+  const indRightMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0x000000 });
+
+  // Front indicators
+  const fIndL = new THREE.Mesh(indGeo, indLeftMat);
+  fIndL.position.set(-width / 2 + 0.12, 0.75, length / 2 + 0.02);
+  microbus.add(fIndL);
+  indicatorLeftMesh.push(fIndL);
+
+  const fIndR = new THREE.Mesh(indGeo, indRightMat);
+  fIndR.position.set(width / 2 - 0.12, 0.75, length / 2 + 0.02);
+  microbus.add(fIndR);
+  indicatorRightMesh.push(fIndR);
+
+  // Rear indicators
+  const rIndL = new THREE.Mesh(indGeo, indLeftMat);
+  rIndL.position.set(-width / 2 + 0.18, 0.8, -length / 2 - 0.01);
+  microbus.add(rIndL);
+  indicatorLeftMesh.push(rIndL);
+
+  const rIndR = new THREE.Mesh(indGeo, indRightMat);
+  rIndR.position.set(width / 2 - 0.18, 0.8, -length / 2 - 0.01);
+  microbus.add(rIndR);
+  indicatorRightMesh.push(rIndR);
+
+  // Ground Contact Shadow
+  const shadow = createContactShadow(width, length);
+  microbus.add(shadow);
+  microbus.contactShadow = shadow;
+
+  microbus.indicatorLeftMesh = indicatorLeftMesh;
+  microbus.indicatorRightMesh = indicatorRightMesh;
+  microbus.wheels = wheels;
+
+  return microbus;
+}
+
+/**
  * Creates Roadway segment with Left-Hand Traffic markings
  */
 export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE.Group {
@@ -719,11 +870,13 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     totalWidth = LANE_WIDTH * 2 + SHOULDER_WIDTH * 2;
   }
 
-  // 1. Asphalt Road Surface
+  // 1. Asphalt Road Surface with high-frequency aggregate grain
   const asphaltGeo = new THREE.PlaneGeometry(totalWidth, segmentLength, 1, 1);
   asphaltGeo.rotateX(-Math.PI / 2);
+  const asphaltTex = createAsphaltTexture();
+  asphaltTex.repeat.set(4, 30);
   const asphaltMat = new THREE.MeshStandardMaterial({
-    color: 0x27272a,
+    map: asphaltTex,
     roughness: 0.85,
     metalness: 0.1,
   });
@@ -731,9 +884,17 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
   asphalt.receiveShadow = true;
   group.add(asphalt);
 
-  // 2. Road Markings
+  // 2. Road Markings & Optical Flow Elements
   const markMatWhite = new THREE.MeshBasicMaterial({ color: 0xf8fafc, polygonOffset: true, polygonOffsetFactor: -2 });
   const markMatYellow = new THREE.MeshBasicMaterial({ color: 0xfacc15, polygonOffset: true, polygonOffsetFactor: -2 });
+  const redKerbMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.8 });
+  const whiteKerbMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8 });
+  const catEyeMat = new THREE.MeshStandardMaterial({
+    color: 0xfffbeb,
+    emissive: 0xfef08a,
+    emissiveIntensity: 0.6,
+  });
+  const catEyeGeo = new THREE.BoxGeometry(0.12, 0.04, 0.12);
 
   if (mode === 'divided_4lane') {
     // Central concrete island divider with yellow/black curb
@@ -752,20 +913,29 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     hedge.position.set(0, 0.65, 0);
     group.add(hedge);
 
-    // Dashed white line between Lane 0 and Lane 1 (Forward side, Left)
+    // Fast Optical Flow: Dashed white lines with 4.5m pitch (2.0m dash + 2.5m gap)
     const forwardLineX = +(DIVIDER_WIDTH / 2 + LANE_WIDTH);
-    for (let z = -segmentLength / 2 + 5; z < segmentLength / 2; z += 10) {
-      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5).rotateX(-Math.PI / 2), markMatWhite);
-      dash.position.set(forwardLineX, 0.02, z);
-      group.add(dash);
-    }
-
-    // Dashed white line between Lane 2 and Lane 3 (Oncoming side, Right)
     const oncomingLineX = -(DIVIDER_WIDTH / 2 + LANE_WIDTH);
-    for (let z = -segmentLength / 2 + 5; z < segmentLength / 2; z += 10) {
-      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5).rotateX(-Math.PI / 2), markMatWhite);
-      dash.position.set(oncomingLineX, 0.02, z);
-      group.add(dash);
+
+    for (let z = -segmentLength / 2 + 2; z < segmentLength / 2; z += 4.5) {
+      // Forward dashed line
+      const dashF = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.0).rotateX(-Math.PI / 2), markMatWhite);
+      dashF.position.set(forwardLineX, 0.02, z);
+      group.add(dashF);
+
+      // Oncoming dashed line
+      const dashO = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.0).rotateX(-Math.PI / 2), markMatWhite);
+      dashO.position.set(oncomingLineX, 0.02, z);
+      group.add(dashO);
+
+      // Reflective road stud (Cat-Eye) between dashes
+      const catEyeF = new THREE.Mesh(catEyeGeo, catEyeMat);
+      catEyeF.position.set(forwardLineX, 0.03, z + 2.25);
+      group.add(catEyeF);
+
+      const catEyeO = new THREE.Mesh(catEyeGeo, catEyeMat);
+      catEyeO.position.set(oncomingLineX, 0.03, z + 2.25);
+      group.add(catEyeO);
     }
 
     // Outer Shoulder Solid White Lines
@@ -780,13 +950,44 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     edgeLineR.position.set(rightEdge, 0.02, 0);
     group.add(edgeLineR);
 
+    // High-Speed Peripheral Visual Cues: Alternating Red & White Rumble Curbs along highway shoulders
+    const curbBlockLen = 1.5;
+    const curbGeo = new THREE.BoxGeometry(0.35, 0.12, curbBlockLen);
+    let curbAlt = false;
+
+    for (let z = -segmentLength / 2 + curbBlockLen / 2; z < segmentLength / 2; z += curbBlockLen) {
+      const mat = curbAlt ? redKerbMat : whiteKerbMat;
+      curbAlt = !curbAlt;
+
+      // Left curb (Forward shoulder)
+      const curbL = new THREE.Mesh(curbGeo, mat);
+      curbL.position.set(leftEdge + 0.25, 0.06, z);
+      group.add(curbL);
+
+      // Right curb (Oncoming shoulder)
+      const curbR = new THREE.Mesh(curbGeo, mat);
+      curbR.position.set(rightEdge - 0.25, 0.06, z);
+      group.add(curbR);
+    }
+
+    // Modern Expressway Streetlight Poles along central island (every 24m)
+    for (let z = -segmentLength / 2 + 12; z < segmentLength / 2; z += 24) {
+      const pole = createStreetlightPole();
+      pole.position.set(0, 0, z);
+      group.add(pole);
+    }
+
   } else {
     // 2-Lane Undivided:
-    // Center Yellow Dashed Line (High risk counter-lane overtaking zone!)
-    for (let z = -segmentLength / 2 + 4; z < segmentLength / 2; z += 8) {
-      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 4.5).rotateX(-Math.PI / 2), markMatYellow);
+    // Center Yellow Dashed Line with 4.5m pitch (High risk counter-lane overtaking zone!)
+    for (let z = -segmentLength / 2 + 2; z < segmentLength / 2; z += 4.5) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 2.0).rotateX(-Math.PI / 2), markMatYellow);
       dash.position.set(0, 0.02, z);
       group.add(dash);
+
+      const catEye = new THREE.Mesh(catEyeGeo, catEyeMat);
+      catEye.position.set(0, 0.03, z + 2.25);
+      group.add(catEye);
     }
 
     // Shoulder Solid White Lines
@@ -797,6 +998,24 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     const edgeLineR = new THREE.Mesh(new THREE.PlaneGeometry(0.25, segmentLength).rotateX(-Math.PI / 2), markMatWhite);
     edgeLineR.position.set(+LANE_WIDTH, 0.02, 0);
     group.add(edgeLineR);
+
+    // Alternating Red & White Rumble Curbs along 2-lane road edges
+    const curbBlockLen = 1.5;
+    const curbGeo = new THREE.BoxGeometry(0.3, 0.1, curbBlockLen);
+    let curbAlt = false;
+
+    for (let z = -segmentLength / 2 + curbBlockLen / 2; z < segmentLength / 2; z += curbBlockLen) {
+      const mat = curbAlt ? redKerbMat : whiteKerbMat;
+      curbAlt = !curbAlt;
+
+      const curbL = new THREE.Mesh(curbGeo, mat);
+      curbL.position.set(-LANE_WIDTH - 0.2, 0.05, z);
+      group.add(curbL);
+
+      const curbR = new THREE.Mesh(curbGeo, mat);
+      curbR.position.set(+LANE_WIDTH + 0.2, 0.05, z);
+      group.add(curbR);
+    }
   }
 
   // 3. Roadside Curbs & Bengali Landscape (Rice paddies, palm trees)
@@ -811,14 +1030,14 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
   // Add roadside Palm trees and Bengali Milestone marker
   const halfRoad = totalWidth / 2;
 
-  // Left & right palm trees
-  for (let z = -segmentLength / 2 + 15; z < segmentLength / 2; z += 30) {
+  // Dense roadside palm trees for rich peripheral parallax motion (every 16m)
+  for (let z = -segmentLength / 2 + 8; z < segmentLength / 2; z += 16) {
     const palmL = createPalmTree();
-    palmL.position.set(-halfRoad - 4 - Math.random() * 6, 0, z);
+    palmL.position.set(-halfRoad - 3.5 - Math.random() * 4, 0, z);
     group.add(palmL);
 
     const palmR = createPalmTree();
-    palmR.position.set(halfRoad + 4 + Math.random() * 6, 0, z + 12);
+    palmR.position.set(halfRoad + 3.5 + Math.random() * 4, 0, z + 8);
     group.add(palmR);
   }
 
@@ -828,6 +1047,44 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
   group.add(milestone);
 
   return group;
+}
+
+/**
+ * Creates modern highway streetlight pole with dual cantilever arms
+ */
+function createStreetlightPole(): THREE.Group {
+  const pole = new THREE.Group();
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.7, roughness: 0.3 });
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xfffbeb,
+    emissiveIntensity: 0.7,
+  });
+
+  // Vertical steel mast
+  const mastGeo = new THREE.CylinderGeometry(0.12, 0.16, 7.5, 8);
+  const mast = new THREE.Mesh(mastGeo, poleMat);
+  mast.position.y = 3.75;
+  mast.castShadow = true;
+  pole.add(mast);
+
+  // Dual cantilever arms extending over left and right lanes
+  const armGeo = new THREE.BoxGeometry(2.8, 0.08, 0.08);
+  const arm = new THREE.Mesh(armGeo, poleMat);
+  arm.position.y = 7.3;
+  pole.add(arm);
+
+  // Left & right lamp fixtures
+  const fixtureGeo = new THREE.BoxGeometry(0.5, 0.12, 0.25);
+  const lampL = new THREE.Mesh(fixtureGeo, lampMat);
+  lampL.position.set(1.4, 7.22, 0);
+  pole.add(lampL);
+
+  const lampR = new THREE.Mesh(fixtureGeo, lampMat);
+  lampR.position.set(-1.4, 7.22, 0);
+  pole.add(lampR);
+
+  return pole;
 }
 
 /**

@@ -30,6 +30,9 @@ import {
   isLaneClear,
   isLaneChangeSafe,
   resolveVehicleOverlaps,
+  calculateRealisticPlayerSpeedStep,
+  SPEED_WORLD_SCALE,
+  evaluateHornYield,
 } from './trafficRules';
 import {
   BUS_LIVERIES,
@@ -39,6 +42,7 @@ import {
   createTruckMesh,
   createCNGMesh,
   createLegunaMesh,
+  createMicrobusMesh,
   createRoadSegment,
   createHighwayGantry,
   VehicleMeshObject,
@@ -92,9 +96,7 @@ export class GameEngine {
   private playerY = 0;
   private playerZ = 0;
   private playerSpeed = 0; // m/s
-  private playerMaxSpeed = kmhToMs(128); // 128 km/h max speed for Volvo/Scania
-  private playerAcceleration = 8.5; // m/s^2 heavy bus acceleration
-  private playerBraking = 16.0; // m/s^2 pneumatic brake deceleration
+  private playerMaxSpeed = kmhToMs(134); // 134 km/h theoretical terminal speed (130 km/h is tough to meet)
   private playerSteerAngle = 0;
   private playerSteerSpeed = 12.0;
   private playerIndicator: IndicatorState = 'none';
@@ -134,6 +136,7 @@ export class GameEngine {
   constructor(container: HTMLElement, callbacks: GameEngineCallbacks) {
     this.container = container;
     this.callbacks = callbacks;
+    (window as unknown as { __ENGINE__?: GameEngine }).__ENGINE__ = this;
 
     // 1. Detect Software WebGL
     this.isSoftwareGl = (() => {
@@ -396,21 +399,27 @@ export class GameEngine {
   public blastAirHorn() {
     audioManager.playBanglaAirHorn();
 
-    // Signal slower traffic ahead to yield and pull to shoulder!
-    const playerAABB = getEntityAABB(this.playerX, this.playerY, this.playerZ, 2.6, 3.4, 11.5);
-    this.trafficEntities.forEach((npc) => {
-      // If NPC is ahead of player (within 45 meters) in same direction
-      const zDiff = npc.z - this.playerZ;
-      if (zDiff > 5 && zDiff < 45 && !npc.isOncoming) {
+    // Only the vehicle directly in front of the player (in player's lane) gives side,
+    // and ONLY if there is enough space available! Vehicles in other lanes NEVER react.
+    const evalResult = evaluateHornYield(
+      this.playerX,
+      this.playerZ,
+      this.trafficEntities,
+      this.highwayMode
+    );
+
+    if (evalResult.shouldYield && evalResult.targetNpcId && evalResult.targetYieldX !== undefined) {
+      const npc = this.trafficEntities.find((e) => e.id === evalResult.targetNpcId);
+      if (npc) {
         const specs = getArchetypeSpecs(npc.archetype);
-        if (Math.random() < specs.honkYieldProbability) {
-          npc.honkedReactionTimer = 3.5;
-          // Flash left indicator to pull over
+        if (Math.random() <= specs.honkYieldProbability) {
+          npc.honkedReactionTimer = 4.0;
+          npc.yieldTargetX = evalResult.targetYieldX;
           npc.indicator = 'left';
-          npc.indicatorTimer = 3.5;
+          npc.indicatorTimer = 4.0;
         }
       }
-    });
+    }
   }
 
   public setInput(inputKey: keyof typeof this.input, value: boolean) {
@@ -421,6 +430,14 @@ export class GameEngine {
     if (inputKey === 'brake' && value && this.playerSpeed > kmhToMs(20)) {
       audioManager.playAirBrakeHiss();
     }
+  }
+
+  public getTrafficEntities(): TrafficEntity[] {
+    return this.trafficEntities;
+  }
+
+  public getPlayerSpeedMs(): number {
+    return this.playerSpeed;
   }
 
   private initRoad() {
@@ -448,22 +465,6 @@ export class GameEngine {
     }
   }
 
-  private afterDraw(cb: () => void) {
-    const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    gl.flush();
-    const poll = () => {
-      const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
-      if (state === gl.UNSIGNALED) {
-        this.animationFrameId = window.setTimeout(poll, 5);
-      } else {
-        if (sync) gl.deleteSync(sync);
-        this.animationFrameId = window.setTimeout(cb, 80);
-      }
-    };
-    this.animationFrameId = window.setTimeout(poll, 5);
-  }
-
   public start() {
     if (this.isRunning) return;
     this.isRunning = true;
@@ -474,13 +475,13 @@ export class GameEngine {
     const tick = () => {
       if (!this.isRunning) return;
 
-      const delta = Math.min(this.clock.getDelta(), 0.05);
+      const delta = Math.min(this.clock.getDelta(), 0.1);
 
       if (!this.isPaused) {
         this.updateSimulation(delta);
       }
 
-      // Render Mirrors ONLY when in Cockpit mode (or when GPU is available)
+      // Render Mirrors ONLY when in Cockpit mode
       if (this.cameraMode === 'cockpit') {
         this.mirrorManager.renderMirror(
           this.renderer,
@@ -494,11 +495,7 @@ export class GameEngine {
       // Render primary camera
       this.renderer.render(this.scene, this.camera);
 
-      if (this.isSoftwareGl) {
-        this.afterDraw(tick);
-      } else {
-        this.animationFrameId = requestAnimationFrame(tick);
-      }
+      this.animationFrameId = requestAnimationFrame(tick);
     };
 
     tick();
@@ -551,24 +548,15 @@ export class GameEngine {
   }
 
   private updateSimulation(dt: number) {
-    // 1. Player Physics & Throttle/Brake
-    if (this.input.accelerate) {
-      this.playerSpeed = Math.min(
-        this.playerSpeed + this.playerAcceleration * dt,
-        this.playerMaxSpeed
-      );
-    } else if (this.input.brake) {
-      this.playerSpeed = Math.max(
-        this.playerSpeed - this.playerBraking * dt,
-        0
-      );
-    } else {
-      // Natural rolling resistance & engine braking
-      this.playerSpeed = Math.max(
-        this.playerSpeed - 1.8 * dt,
-        0
-      );
-    }
+    // 1. Heavy Bus Powertrain Dynamics & Aerodynamics
+    // Reaching 130 km/h is tough and requires sustained uninterrupted full-throttle driving
+    this.playerSpeed = calculateRealisticPlayerSpeedStep(
+      this.playerSpeed,
+      this.input.accelerate,
+      this.input.brake,
+      dt,
+      134
+    );
 
     // 2. Heavy Bus Steering Physics
     // In driver's +Z perspective, Left is +X and Right is -X
@@ -597,8 +585,8 @@ export class GameEngine {
       bounds.maxX - 1.3
     );
 
-    // Advance longitudinal player position
-    this.playerZ += this.playerSpeed * dt;
+    // Advance longitudinal player position with calibrated optical world speed
+    this.playerZ += this.playerSpeed * SPEED_WORLD_SCALE * dt;
     this.distanceTraveled += this.playerSpeed * dt;
 
     const currentSpeedKmh = msToKmh(this.playerSpeed);
@@ -646,7 +634,7 @@ export class GameEngine {
 
     // Rotate tires with speed
     const wheelCircumference = Math.PI * 1.1; // 1.1m diameter
-    const wheelRotDelta = (this.playerSpeed * dt) / wheelCircumference;
+    const wheelRotDelta = (this.playerSpeed * SPEED_WORLD_SCALE * dt) / wheelCircumference;
     if (this.playerBusMesh.wheels) {
       this.playerBusMesh.wheels.forEach((wheel, idx) => {
         wheel.rotation.x += wheelRotDelta * Math.PI * 2;
@@ -755,19 +743,40 @@ export class GameEngine {
   private spawnTraffic() {
     if (this.trafficEntities.length >= this.maxTrafficCount) return;
 
-    // Pick random lane
-    const availableLanes = this.lanes;
-    const randomLane = availableLanes[Math.floor(Math.random() * availableLanes.length)];
-
-    // Archetype selection based on Bangladeshi highway distribution
+    // Archetype selection based on Bangladeshi highway distribution:
+    // 35% Intercity express coach (90-112 km/h)
+    // 24% Heavy overloaded Tata/Bedford truck (46-62 km/h)
+    // 17% Toyota HiAce / Noah express microbus (78-95 km/h)
+    // 12% Green 3-wheeler auto-rickshaw (36-48 km/h)
+    // 12% Human hauler Leguna (56-70 km/h)
     const rand = Math.random();
     let archetype: VehicleArchetype;
-    if (rand < 0.45) archetype = 'bus'; // Intercity rivalry buses (Hanif/Shyamoli/Ena)
-    else if (rand < 0.70) archetype = 'truck'; // 10-wheel Tata/Ashok Leyland trucks
-    else if (rand < 0.88) archetype = 'cng'; // Green 3-wheeler auto-rickshaw
-    else archetype = 'leguna'; // Human hauler
+    if (rand < 0.35) archetype = 'bus';
+    else if (rand < 0.59) archetype = 'truck';
+    else if (rand < 0.76) archetype = 'microbus';
+    else if (rand < 0.88) archetype = 'cng';
+    else archetype = 'leguna';
+
+    // Realistic lane assignment with speed-based lane discipline:
+    // Slower vehicles (CNG, overloaded trucks) heavily prefer outer slow lanes (Lane 0 / Lane 3)
+    let randomLane: LaneInfo;
+    if (this.highwayMode === 'divided_4lane') {
+      if (archetype === 'cng' || archetype === 'truck') {
+        if (Math.random() < 0.85) {
+          const slowLanes = this.lanes.filter((l) => l.index === 0 || l.index === 3);
+          randomLane = slowLanes.length > 0 ? slowLanes[Math.floor(Math.random() * slowLanes.length)] : this.lanes[0];
+        } else {
+          randomLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
+        }
+      } else {
+        randomLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
+      }
+    } else {
+      randomLane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
+    }
 
     const specs = getArchetypeSpecs(archetype);
+    // Draw individual cruising speed with unique driver variation
     const speedKmh = THREE.MathUtils.randFloat(specs.minSpeedKmh, specs.maxSpeedKmh);
     const speedMs = kmhToMs(speedKmh);
 
@@ -817,7 +826,7 @@ export class GameEngine {
       y: 0,
       z: spawnZ,
       speed: speedMs,
-      targetSpeed: speedMs,
+      targetSpeed: speedMs, // Retain individual cruising speed target
       width: specs.width,
       length: specs.length,
       height: specs.height,
@@ -841,6 +850,8 @@ export class GameEngine {
       mesh = createTruckMesh();
     } else if (archetype === 'cng') {
       mesh = createCNGMesh();
+    } else if (archetype === 'microbus') {
+      mesh = createMicrobusMesh();
     } else {
       mesh = createLegunaMesh();
     }
@@ -878,7 +889,7 @@ export class GameEngine {
     for (let i = 0; i < this.trafficEntities.length; i++) {
       const npc = this.trafficEntities[i];
       const dir = npc.isOncoming ? -1 : 1;
-      npc.z += npc.speed * dir * dt;
+      npc.z += npc.speed * SPEED_WORLD_SCALE * dir * dt;
 
       // AI Decision Loop: Front Raycast, Braking & Lane Change Signaling
       this.updateNPCAI(npc, dt);
@@ -906,7 +917,7 @@ export class GameEngine {
 
       // Rotate wheels if available
       if (mesh.wheels) {
-        const wheelRotDelta = (npc.speed * dt) / 1.1;
+        const wheelRotDelta = (npc.speed * SPEED_WORLD_SCALE * dt) / 1.1;
         mesh.wheels.forEach((w) => {
           w.rotation.x += wheelRotDelta * Math.PI * 2;
         });
@@ -961,10 +972,14 @@ export class GameEngine {
           audioManager.playNearMissWhoosh();
           this.cameraShake = 0.25;
 
+          const specs = getArchetypeSpecs(npc.archetype);
+          const npcSpeedKmh = msToKmh(npc.speed);
+          const vehicleLabel = npc.livery ? npc.livery.name : specs.bengaliName;
+
           this.closeOvertakeNotification = {
             text: inCounterLane
-              ? 'বিপজ্জনক কাউন্টার ওভারটেক! +৳' + Math.floor(bonus / 2)
-              : 'ক্লোজ ওভারটেক! +৳' + Math.floor(bonus / 2),
+              ? `🔥 কাউন্টার ওভারটেক: ${vehicleLabel} (${npcSpeedKmh} কি.মি./ঘণ্টা) +৳${Math.floor(bonus / 2)}`
+              : `⚡ ক্লোজ ওভারটেক: ${vehicleLabel} (${npcSpeedKmh} কি.মি./ঘণ্টা) +৳${Math.floor(bonus / 2)}`,
             points: bonus,
             timestamp: Date.now(),
           };
@@ -992,14 +1007,23 @@ export class GameEngine {
    * - Reacts to player's air horn by yielding to the shoulder.
    */
   private updateNPCAI(npc: TrafficEntity, dt: number) {
-    // 1. Honk Reaction: If honked by player bus, pull toward outer left road shoulder
-    if (npc.honkedReactionTimer > 0) {
+    // 1. Honk Reaction: Only the vehicle directly in front of player with verified space gives side!
+    if (npc.honkedReactionTimer > 0 && npc.yieldTargetX !== undefined) {
       npc.honkedReactionTimer -= dt;
-      const bounds = getRoadBounds(this.highwayMode);
-      // In LHT, outer left shoulder has highest positive X
-      const targetEdgeX = bounds.maxX - 1.6;
-      npc.x = THREE.MathUtils.damp(npc.x, targetEdgeX, 2.5, dt);
+      // Smoothly slide over to the clear side position
+      npc.x = THREE.MathUtils.damp(npc.x, npc.yieldTargetX, 2.6, dt);
+
+      // Once the player bus passes this NPC, cancel reaction and return to normal lane
+      if (this.playerZ > npc.z + npc.length / 2 + 2.0) {
+        npc.honkedReactionTimer = 0;
+        npc.indicator = 'none';
+        npc.yieldTargetX = undefined;
+      }
       return;
+    } else if (npc.honkedReactionTimer <= 0 && npc.yieldTargetX !== undefined) {
+      // Reaction timer elapsed: turn off indicator and return to lane
+      npc.indicator = 'none';
+      npc.yieldTargetX = undefined;
     }
 
     // 2. Active Lane Change in progress
@@ -1119,8 +1143,8 @@ export class GameEngine {
         npc.speed = Math.min(npc.speed, frontSpeed * 0.95);
       }
 
-      // AI Overtaking Decision for Buses
-      if (npc.archetype === 'bus') {
+      // AI Overtaking Decision for faster vehicles (Buses & Microbuses)
+      if (npc.archetype === 'bus' || npc.archetype === 'microbus') {
         if (this.highwayMode === 'divided_4lane') {
           // In divided 4-lane LHT:
           // Lane 0: Outer Left (Slow, X ~ +6.4)
@@ -1155,10 +1179,9 @@ export class GameEngine {
         }
       }
     } else {
-      // Free lane ahead: accelerate back to target cruising speed
+      // Free lane ahead: accelerate back to this individual vehicle's cruising speed
       const specs = getArchetypeSpecs(npc.archetype);
-      const cruiseSpeed = kmhToMs(specs.maxSpeedKmh);
-      npc.speed = THREE.MathUtils.damp(npc.speed, cruiseSpeed, 1.4, dt);
+      npc.speed = THREE.MathUtils.damp(npc.speed, npc.targetSpeed, specs.accelRate, dt);
 
       // In 4-lane mode: if cruising in fast lane (Lane 1) with clear slow lane (Lane 0), return to Lane 0
       if (
@@ -1222,28 +1245,35 @@ export class GameEngine {
       this.cameraShake = Math.max(0, this.cameraShake - dt * 2.0);
     }
 
+    const speedRatio = Math.min(this.playerSpeed / kmhToMs(130), 1.0);
+
     if (this.cameraMode === 'chase') {
-      this.camera.fov = 60;
+      // Dynamic Speed FOV: 60° at standstill expanding to 74° at high speed for authentic highway rush
+      const targetFov = 60 + speedRatio * 14;
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, 0.1);
       this.camera.updateProjectionMatrix();
 
-      // 1. Third-Person Chase Camera: Elevated view behind and above bus
+      // Third-Person Chase Camera: Elevated view behind and above bus
+      const camDistBack = 13.5 + speedRatio * 1.5;
+      const camHeight = 4.6 + speedRatio * 0.6;
       const targetCamPos = new THREE.Vector3(
-        this.playerX * 0.7 + shakeX,
-        this.playerY + 4.8 + shakeY,
-        this.playerZ - 14.0
+        this.playerX * 0.75 + shakeX,
+        this.playerY + camHeight + shakeY,
+        this.playerZ - camDistBack
       );
-      this.camera.position.lerp(targetCamPos, 0.16);
+      this.camera.position.lerp(targetCamPos, 0.22);
 
       const lookTarget = new THREE.Vector3(
         this.playerX + shakeX * 0.5,
-        this.playerY + 2.2,
-        this.playerZ + 25
+        this.playerY + 2.0,
+        this.playerZ + 28
       );
       this.camera.lookAt(lookTarget);
 
     } else if (this.cameraMode === 'cockpit') {
-      // 2. Interior First-Person Cockpit Camera:
-      this.camera.fov = 72; // Wide angle to encompass windshield, interior mirror, steering wheel, and side mirrors
+      // Interior First-Person Cockpit Camera:
+      const targetFov = 72 + speedRatio * 8;
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, 0.1);
       this.camera.updateProjectionMatrix();
 
       // In Bangladesh (LHT), the driver seat is on the RIGHT side of the bus (-X in driver's +Z view)
@@ -1262,8 +1292,9 @@ export class GameEngine {
       this.camera.lookAt(lookTarget);
 
     } else {
-      // 3. Hood / Front Bumper Cinematic View
-      this.camera.fov = 65;
+      // Hood / Front Bumper Cinematic View
+      const targetFov = 65 + speedRatio * 12;
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, 0.1);
       this.camera.updateProjectionMatrix();
 
       const bumperZ = this.playerZ + 11.5 / 2 + 0.2;

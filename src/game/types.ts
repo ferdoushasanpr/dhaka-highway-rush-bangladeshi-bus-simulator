@@ -15,7 +15,7 @@ export type GameState = 'title' | 'playing' | 'paused' | 'gameover';
 
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 
-export type VehicleArchetype = 'bus' | 'truck' | 'cng' | 'leguna';
+export type VehicleArchetype = 'bus' | 'truck' | 'cng' | 'leguna' | 'microbus';
 
 export interface BusLivery {
   id: string;
@@ -60,6 +60,7 @@ export interface TrafficEntity {
   isOvertakingCounterLane: boolean;
   counterLaneTimer: number;
   honkedReactionTimer: number;
+  yieldTargetX?: number;
 }
 
 export interface GameScoreState {
