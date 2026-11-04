@@ -14,7 +14,13 @@ import {
   BusLivery,
   GameScoreState,
   WeatherMode,
+  LocationInfo,
 } from './types';
+import {
+  getMilestoneAtZ,
+  getLocationInfoAtZ,
+  MilestoneDefinition,
+} from './zones';
 import {
   getLaneConfiguration,
   getRoadBounds,
@@ -86,8 +92,12 @@ export class GameEngine {
   private lanes: LaneInfo[] = [];
   private roadSegments: THREE.Group[] = [];
   private readonly SEGMENT_LENGTH = 120;
-  private readonly NUM_SEGMENTS = 4;
+  private readonly NUM_SEGMENTS = 5;
   private nextSegmentZ = 0;
+
+  // Location & Milestone Progress
+  private currentLocationId = '';
+  private locationToast: GameScoreState['locationToast'] = null;
 
   // Player Bus
   private playerBusMesh: VehicleMeshObject;
@@ -449,17 +459,11 @@ export class GameEngine {
     this.nextSegmentZ = -this.SEGMENT_LENGTH;
 
     for (let i = 0; i < this.NUM_SEGMENTS; i++) {
-      const segment = createRoadSegment(this.highwayMode, this.SEGMENT_LENGTH);
+      const milestone = getMilestoneAtZ(this.nextSegmentZ);
+      const segment = createRoadSegment(this.highwayMode, milestone, this.SEGMENT_LENGTH);
       segment.position.z = this.nextSegmentZ;
       this.scene.add(segment);
       this.roadSegments.push(segment);
-
-      // Add overhead gantry sign every 3 segments
-      if (i % 3 === 0) {
-        const gantry = createHighwayGantry(30);
-        gantry.position.set(0, 0, this.nextSegmentZ + 20);
-        this.scene.add(gantry);
-      }
 
       this.nextSegmentZ += this.SEGMENT_LENGTH;
     }
@@ -535,11 +539,12 @@ export class GameEngine {
     this.trafficEntities = [];
     this.trafficMeshMap.clear();
 
-    // Reset road segments
-    this.roadSegments.forEach((seg, idx) => {
-      seg.position.z = (idx - 1) * this.SEGMENT_LENGTH;
-    });
-    this.nextSegmentZ = (this.NUM_SEGMENTS - 1) * this.SEGMENT_LENGTH;
+    // Reset road segments with initial zone landmarks
+    this.roadSegments.forEach((segment) => this.scene.remove(segment));
+    this.roadSegments = [];
+    this.initRoad();
+    this.currentLocationId = '';
+    this.locationToast = null;
 
     this.playerBusMesh.position.set(this.playerX, 0, this.playerZ);
     this.playerBusMesh.rotation.set(0, 0, 0);
@@ -577,12 +582,32 @@ export class GameEngine {
     const lateralSpeed = 7.5 * this.playerSteerAngle * Math.min(speedRatio * 1.5, 1.0);
     this.playerX += lateralSpeed * dt;
 
-    // Road Bounds Enforcing
+    // Active Bangladeshi Highway Milestone & Zone
+    const currentMilestone = getMilestoneAtZ(this.playerZ);
+    const currentLocation = getLocationInfoAtZ(this.playerZ);
+
+    // Location Change Toast Trigger
+    if (this.currentLocationId !== currentLocation.id) {
+      this.currentLocationId = currentLocation.id;
+      this.locationToast = {
+        nameBn: currentLocation.nameBn,
+        nameEn: currentLocation.nameEn,
+        badgeBn: currentLocation.badgeBn,
+        timestamp: Date.now(),
+      };
+    }
+
+    if (this.locationToast && Date.now() - this.locationToast.timestamp > 3500) {
+      this.locationToast = null;
+    }
+
+    // Road Bounds Enforcing with narrow road adaptation
     const bounds = getRoadBounds(this.highwayMode);
+    const widthFactor = currentMilestone.isNarrow ? 0.85 : 1.0;
     this.playerX = THREE.MathUtils.clamp(
       this.playerX,
-      bounds.minX + 1.3,
-      bounds.maxX - 1.3
+      bounds.minX * widthFactor + 1.2,
+      bounds.maxX * widthFactor - 1.2
     );
 
     // Advance longitudinal player position with calibrated optical world speed
@@ -605,12 +630,21 @@ export class GameEngine {
       this.score += Math.floor(dt * currentSpeedKmh * 0.5);
     }
 
-    // 3. Heavy Vehicle Body Roll and Steering Animation
+    // 3. Heavy Vehicle Suspension & Body Dynamics
+    // Dynamic suspension bounce on unpaved/broken roads
+    if (currentMilestone.zoneType === 'unpaved') {
+      const bump = Math.sin(this.playerZ * 1.8) * 0.05 + Math.sin(this.playerZ * 4.2) * 0.025;
+      this.playerY = Math.abs(bump);
+      this.cameraShake = Math.max(this.cameraShake, (this.playerSpeed / this.playerMaxSpeed) * 0.16);
+    } else {
+      this.playerY = 0;
+    }
+
     // Visual suspension roll on rapid lane changes
     const bodyRoll = this.playerSteerAngle * 0.08 * speedRatio;
     this.playerBusMesh.rotation.z = bodyRoll;
     this.playerBusMesh.rotation.y = this.playerSteerAngle * 0.04;
-    this.playerBusMesh.position.set(this.playerX, 0, this.playerZ);
+    this.playerBusMesh.position.set(this.playerX, this.playerY, this.playerZ);
 
     // Update Projector Headlights and Volumetric Cones
     const frontZ = this.playerZ + 5.8;
@@ -685,6 +719,8 @@ export class GameEngine {
       nearMissCount: this.nearMissCount,
       counterLaneMeters: Math.round(this.counterLaneMeters),
       maxSpeedKmh: this.maxSpeedKmh,
+      currentLocation,
+      locationToast: this.locationToast,
       closeOvertakeNotification: this.closeOvertakeNotification,
     });
   }
@@ -732,9 +768,14 @@ export class GameEngine {
     this.sunLight.target.updateMatrixWorld();
 
     // Check if player has passed the oldest road segment
-    this.roadSegments.forEach((segment) => {
-      if (segment.position.z + this.SEGMENT_LENGTH < this.playerZ - 60) {
-        segment.position.z = this.nextSegmentZ;
+    this.roadSegments.forEach((segment, idx) => {
+      if (segment.position.z + this.SEGMENT_LENGTH < this.playerZ - 80) {
+        this.scene.remove(segment);
+        const newMilestone = getMilestoneAtZ(this.nextSegmentZ);
+        const newSegment = createRoadSegment(this.highwayMode, newMilestone, this.SEGMENT_LENGTH);
+        newSegment.position.z = this.nextSegmentZ;
+        this.scene.add(newSegment);
+        this.roadSegments[idx] = newSegment;
         this.nextSegmentZ += this.SEGMENT_LENGTH;
       }
     });

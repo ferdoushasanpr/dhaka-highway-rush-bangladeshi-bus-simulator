@@ -285,7 +285,14 @@ export const GameShell: React.FC<GameShellProps> = ({
           <ShieldAlert className="w-8 h-8 text-red-500 animate-pulse" />
         </div>
         <h2 className="text-3xl font-black text-red-500 mb-1">দুর্ঘটনা! (CRASH)</h2>
-        <p className="text-sm text-neutral-400 mb-5">হাইওয়েতে গাড়ি ধাক্কা খেয়েছে</p>
+        <p className="text-sm text-neutral-400 mb-2">হাইওয়েতে গাড়ি ধাক্কা খেয়েছে</p>
+        {scoreState.currentLocation && (
+          <div className="mb-4 inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-800 border border-neutral-700 rounded-full text-xs text-neutral-300">
+            <span className="text-emerald-400">📍 সর্বশেষ স্থান:</span>
+            <span className="text-white font-bold">{scoreState.currentLocation.nameBn}</span>
+            <span className="text-emerald-400 text-[10px] font-semibold">({scoreState.currentLocation.badgeBn})</span>
+          </div>
+        )}
 
         {/* Performance & Rewards Stats Grid */}
         <div className="grid grid-cols-2 gap-3 mb-6 text-left">

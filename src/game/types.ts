@@ -63,6 +63,28 @@ export interface TrafficEntity {
   yieldTargetX?: number;
 }
 
+export type ZoneType =
+  | 'countryside'
+  | 'town_bazaar'
+  | 'long_bridge'
+  | 'small_bridge'
+  | 'unpaved'
+  | 'narrow_road'
+  | 'flyover';
+
+export interface LocationInfo {
+  id: string;
+  nameBn: string;
+  nameEn: string;
+  badgeBn: string;
+  zoneType: ZoneType;
+  districtBn: string;
+  highwayNumber: string;
+  kmMarker: number;
+  nextDestinationBn: string;
+  nextDistanceKm: number;
+}
+
 export interface GameScoreState {
   distanceTraveledMeters: number;
   currentSpeedKmh: number;
@@ -71,6 +93,13 @@ export interface GameScoreState {
   nearMissCount: number;
   counterLaneMeters: number;
   maxSpeedKmh: number;
+  currentLocation?: LocationInfo;
+  locationToast?: {
+    nameBn: string;
+    nameEn: string;
+    badgeBn: string;
+    timestamp: number;
+  } | null;
   closeOvertakeNotification?: {
     text: string;
     points: number;

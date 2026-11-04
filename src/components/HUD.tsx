@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { CameraViewMode, GameScoreState, HighwayMode, IndicatorState, WeatherMode } from '../game/types';
-import { Volume2, VolumeX, Pause, Camera, Radio, AlertTriangle, Sun, Moon, CloudFog } from 'lucide-react';
+import { Volume2, VolumeX, Pause, Camera, Radio, AlertTriangle, Sun, Moon, CloudFog, MapPin, Navigation } from 'lucide-react';
 
 interface HUDProps {
   scoreState: GameScoreState;
@@ -92,7 +92,66 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
             )}
           </div>
+
+          {/* Mobile/Compact Location Tag */}
+          {scoreState.currentLocation && (
+            <div className="lg:hidden flex items-center gap-1.5 bg-neutral-900/90 border border-emerald-500/40 rounded px-2.5 py-1 text-[11px] shadow">
+              <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+              <span className="text-white font-bold truncate max-w-[180px]">
+                {scoreState.currentLocation.nameBn}
+              </span>
+              <span className="text-emerald-300 text-[9px] font-bold px-1 bg-emerald-950 rounded">
+                {scoreState.currentLocation.badgeBn}
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Center: Bangladeshi Highway Location Banner (RHD Style) */}
+        {scoreState.currentLocation && (
+          <div className="flex flex-col items-center bg-neutral-900/95 border border-emerald-500/50 rounded-lg px-3 md:px-4 py-1.5 md:py-2 shadow-2xl backdrop-blur-sm pointer-events-auto max-w-[240px] sm:max-w-xs md:max-w-md">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-white font-extrabold text-xs md:text-sm tracking-wide truncate">
+                {scoreState.currentLocation.nameBn}
+              </span>
+              <span className="bg-emerald-950 text-emerald-300 text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/40 shrink-0">
+                {scoreState.currentLocation.badgeBn}
+              </span>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 md:gap-3 text-[10px] md:text-[11px] text-neutral-300 mt-0.5 truncate">
+              <span className="text-neutral-400 font-medium">
+                {scoreState.currentLocation.nameEn}
+              </span>
+              <span className="text-emerald-500">•</span>
+              <span className="text-amber-300 font-semibold truncate">
+                পরবর্তী: {scoreState.currentLocation.nextDestinationBn}
+              </span>
+              <span className="bg-neutral-800 text-neutral-200 px-1 rounded text-[10px] font-mono shrink-0">
+                {scoreState.currentLocation.nextDistanceKm} কি.মি.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Landmark Entrance Notification Toast */}
+        {scoreState.locationToast && (
+          <div className="pointer-events-none transform -translate-x-1/2 left-1/2 fixed top-20 bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 text-white font-bold text-xs md:text-sm px-6 py-2.5 rounded-full shadow-2xl border border-emerald-300/40 tracking-wide flex items-center gap-2.5 animate-pulse z-40">
+            <span className="text-base">📍</span>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span>প্রবেশ করছেন: {scoreState.locationToast.nameBn}</span>
+                <span className="bg-white/20 text-emerald-200 text-[10px] px-1.5 py-0.5 rounded font-black">
+                  {scoreState.locationToast.badgeBn}
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-200 font-normal">
+                {scoreState.locationToast.nameEn}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Center Toast: Close Overtake Notification */}
         {scoreState.closeOvertakeNotification && (

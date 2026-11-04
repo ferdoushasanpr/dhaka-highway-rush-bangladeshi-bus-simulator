@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { BusLivery, HighwayMode, IndicatorState } from './types';
+import { MilestoneDefinition } from './zones';
 import {
   BUS_LIVERIES,
   createBusLiveryTexture,
@@ -14,6 +15,13 @@ import {
   createCNGTexture,
   createHighwaySignTexture,
   createAsphaltTexture,
+  createUnpavedRoadTexture,
+  createBridgeDeckTexture,
+  createFlyoverDeckTexture,
+  createWaterTexture,
+  createShopSignTexture,
+  createBridgeNameSignTexture,
+  createCustomMilestoneTexture,
 } from './proceduralTextures';
 import { LANE_WIDTH, DIVIDER_WIDTH, SHOULDER_WIDTH } from './trafficRules';
 
@@ -858,31 +866,67 @@ export function createMicrobusMesh(): VehicleMeshObject {
 }
 
 /**
- * Creates Roadway segment with Left-Hand Traffic markings
+ * Creates Roadway segment with Left-Hand Traffic markings and dynamic Bangladeshi environment
  */
-export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE.Group {
+export function createRoadSegment(
+  mode: HighwayMode,
+  milestone?: MilestoneDefinition,
+  segmentLength = 120
+): THREE.Group {
   const group = new THREE.Group();
+  const zoneType = milestone?.zoneType || 'countryside';
+  const isNarrow = milestone?.isNarrow || false;
 
   let totalWidth: number;
   if (mode === 'divided_4lane') {
-    totalWidth = DIVIDER_WIDTH + LANE_WIDTH * 4 + SHOULDER_WIDTH * 2;
+    totalWidth = isNarrow
+      ? (DIVIDER_WIDTH + LANE_WIDTH * 4 + SHOULDER_WIDTH * 2) * 0.85
+      : DIVIDER_WIDTH + LANE_WIDTH * 4 + SHOULDER_WIDTH * 2;
   } else {
-    totalWidth = LANE_WIDTH * 2 + SHOULDER_WIDTH * 2;
+    totalWidth = isNarrow
+      ? (LANE_WIDTH * 2 + SHOULDER_WIDTH * 2) * 0.85
+      : LANE_WIDTH * 2 + SHOULDER_WIDTH * 2;
   }
 
-  // 1. Asphalt Road Surface with high-frequency aggregate grain
+  // 1. Road Surface Material tailored to active Bangladeshi Zone
+  let roadMat: THREE.Material;
   const asphaltGeo = new THREE.PlaneGeometry(totalWidth, segmentLength, 1, 1);
   asphaltGeo.rotateX(-Math.PI / 2);
-  const asphaltTex = createAsphaltTexture();
-  asphaltTex.repeat.set(4, 30);
-  const asphaltMat = new THREE.MeshStandardMaterial({
-    map: asphaltTex,
-    roughness: 0.85,
-    metalness: 0.1,
-  });
-  const asphalt = new THREE.Mesh(asphaltGeo, asphaltMat);
-  asphalt.receiveShadow = true;
-  group.add(asphalt);
+
+  if (zoneType === 'unpaved') {
+    const unpavedTex = createUnpavedRoadTexture();
+    roadMat = new THREE.MeshStandardMaterial({
+      map: unpavedTex,
+      roughness: 0.95,
+      metalness: 0.05,
+    });
+  } else if (zoneType === 'long_bridge' || zoneType === 'small_bridge') {
+    const bridgeTex = createBridgeDeckTexture();
+    roadMat = new THREE.MeshStandardMaterial({
+      map: bridgeTex,
+      roughness: 0.75,
+      metalness: 0.2,
+    });
+  } else if (zoneType === 'flyover') {
+    const flyoverTex = createFlyoverDeckTexture();
+    roadMat = new THREE.MeshStandardMaterial({
+      map: flyoverTex,
+      roughness: 0.7,
+      metalness: 0.15,
+    });
+  } else {
+    const asphaltTex = createAsphaltTexture();
+    asphaltTex.repeat.set(4, 30);
+    roadMat = new THREE.MeshStandardMaterial({
+      map: asphaltTex,
+      roughness: 0.85,
+      metalness: 0.1,
+    });
+  }
+
+  const roadMesh = new THREE.Mesh(asphaltGeo, roadMat);
+  roadMesh.receiveShadow = true;
+  group.add(roadMesh);
 
   // 2. Road Markings & Optical Flow Elements
   const markMatWhite = new THREE.MeshBasicMaterial({ color: 0xf8fafc, polygonOffset: true, polygonOffsetFactor: -2 });
@@ -896,8 +940,8 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
   });
   const catEyeGeo = new THREE.BoxGeometry(0.12, 0.04, 0.12);
 
-  if (mode === 'divided_4lane') {
-    // Central concrete island divider with yellow/black curb
+  if (mode === 'divided_4lane' && zoneType !== 'narrow_road') {
+    // Central concrete island divider
     const dividerGeo = new THREE.BoxGeometry(DIVIDER_WIDTH, 0.45, segmentLength);
     const dividerMat = new THREE.MeshStandardMaterial({ color: 0x71717a, roughness: 0.9 });
     const divider = new THREE.Mesh(dividerGeo, dividerMat);
@@ -906,29 +950,28 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     divider.receiveShadow = true;
     group.add(divider);
 
-    // Green bushes / hedge inside central divider (signature of Padma Bridge expressway)
-    const hedgeGeo = new THREE.BoxGeometry(DIVIDER_WIDTH * 0.7, 0.6, segmentLength);
-    const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.9 });
-    const hedge = new THREE.Mesh(hedgeGeo, hedgeMat);
-    hedge.position.set(0, 0.65, 0);
-    group.add(hedge);
+    // Green bushes / hedge inside central divider (not on long bridges or unpaved)
+    if (zoneType !== 'long_bridge' && zoneType !== 'unpaved') {
+      const hedgeGeo = new THREE.BoxGeometry(DIVIDER_WIDTH * 0.7, 0.6, segmentLength);
+      const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.9 });
+      const hedge = new THREE.Mesh(hedgeGeo, hedgeMat);
+      hedge.position.set(0, 0.65, 0);
+      group.add(hedge);
+    }
 
-    // Fast Optical Flow: Dashed white lines with 4.5m pitch (2.0m dash + 2.5m gap)
+    // Fast Optical Flow: Dashed white lines with 4.5m pitch
     const forwardLineX = +(DIVIDER_WIDTH / 2 + LANE_WIDTH);
     const oncomingLineX = -(DIVIDER_WIDTH / 2 + LANE_WIDTH);
 
     for (let z = -segmentLength / 2 + 2; z < segmentLength / 2; z += 4.5) {
-      // Forward dashed line
       const dashF = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.0).rotateX(-Math.PI / 2), markMatWhite);
       dashF.position.set(forwardLineX, 0.02, z);
       group.add(dashF);
 
-      // Oncoming dashed line
       const dashO = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.0).rotateX(-Math.PI / 2), markMatWhite);
       dashO.position.set(oncomingLineX, 0.02, z);
       group.add(dashO);
 
-      // Reflective road stud (Cat-Eye) between dashes
       const catEyeF = new THREE.Mesh(catEyeGeo, catEyeMat);
       catEyeF.position.set(forwardLineX, 0.03, z + 2.25);
       group.add(catEyeF);
@@ -950,7 +993,7 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
     edgeLineR.position.set(rightEdge, 0.02, 0);
     group.add(edgeLineR);
 
-    // High-Speed Peripheral Visual Cues: Alternating Red & White Rumble Curbs along highway shoulders
+    // Alternating Red & White Rumble Curbs along highway shoulders
     const curbBlockLen = 1.5;
     const curbGeo = new THREE.BoxGeometry(0.35, 0.12, curbBlockLen);
     let curbAlt = false;
@@ -959,27 +1002,28 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
       const mat = curbAlt ? redKerbMat : whiteKerbMat;
       curbAlt = !curbAlt;
 
-      // Left curb (Forward shoulder)
       const curbL = new THREE.Mesh(curbGeo, mat);
       curbL.position.set(leftEdge + 0.25, 0.06, z);
       group.add(curbL);
 
-      // Right curb (Oncoming shoulder)
       const curbR = new THREE.Mesh(curbGeo, mat);
       curbR.position.set(rightEdge - 0.25, 0.06, z);
       group.add(curbR);
     }
 
-    // Modern Expressway Streetlight Poles along central island (every 24m)
-    for (let z = -segmentLength / 2 + 12; z < segmentLength / 2; z += 24) {
-      const pole = createStreetlightPole();
-      pole.position.set(0, 0, z);
-      group.add(pole);
+    // Expressway Streetlight Poles along central island (every 24m)
+    if (zoneType !== 'unpaved') {
+      for (let z = -segmentLength / 2 + 12; z < segmentLength / 2; z += 24) {
+        const pole = createStreetlightPole();
+        pole.position.set(0, 0, z);
+        group.add(pole);
+      }
     }
-
   } else {
     // 2-Lane Undivided:
-    // Center Yellow Dashed Line with 4.5m pitch (High risk counter-lane overtaking zone!)
+    const halfLane = isNarrow ? LANE_WIDTH * 0.85 : LANE_WIDTH;
+
+    // Center Yellow Dashed Line with 4.5m pitch
     for (let z = -segmentLength / 2 + 2; z < segmentLength / 2; z += 4.5) {
       const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 2.0).rotateX(-Math.PI / 2), markMatYellow);
       dash.position.set(0, 0.02, z);
@@ -992,14 +1036,14 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
 
     // Shoulder Solid White Lines
     const edgeLineL = new THREE.Mesh(new THREE.PlaneGeometry(0.25, segmentLength).rotateX(-Math.PI / 2), markMatWhite);
-    edgeLineL.position.set(-LANE_WIDTH, 0.02, 0);
+    edgeLineL.position.set(-halfLane, 0.02, 0);
     group.add(edgeLineL);
 
     const edgeLineR = new THREE.Mesh(new THREE.PlaneGeometry(0.25, segmentLength).rotateX(-Math.PI / 2), markMatWhite);
-    edgeLineR.position.set(+LANE_WIDTH, 0.02, 0);
+    edgeLineR.position.set(+halfLane, 0.02, 0);
     group.add(edgeLineR);
 
-    // Alternating Red & White Rumble Curbs along 2-lane road edges
+    // Alternating Red & White Rumble Curbs
     const curbBlockLen = 1.5;
     const curbGeo = new THREE.BoxGeometry(0.3, 0.1, curbBlockLen);
     let curbAlt = false;
@@ -1009,44 +1053,594 @@ export function createRoadSegment(mode: HighwayMode, segmentLength = 120): THREE
       curbAlt = !curbAlt;
 
       const curbL = new THREE.Mesh(curbGeo, mat);
-      curbL.position.set(-LANE_WIDTH - 0.2, 0.05, z);
+      curbL.position.set(-halfLane - 0.2, 0.05, z);
       group.add(curbL);
 
       const curbR = new THREE.Mesh(curbGeo, mat);
-      curbR.position.set(+LANE_WIDTH + 0.2, 0.05, z);
+      curbR.position.set(+halfLane + 0.2, 0.05, z);
       group.add(curbR);
     }
   }
 
-  // 3. Roadside Curbs & Bengali Landscape (Rice paddies, palm trees)
-  const terrainWidth = 140;
-  const terrainGeo = new THREE.PlaneGeometry(terrainWidth, segmentLength, 1, 1).rotateX(-Math.PI / 2);
-  const terrainMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.95 }); // Emerald rice paddies
+  // 3. Dynamic Environment Decorators tailored to Bangladeshi Zone
+  switch (zoneType) {
+    case 'long_bridge':
+      buildLongBridgeDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'small_bridge':
+      buildSmallBridgeDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'town_bazaar':
+      buildTownBazaarDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'unpaved':
+      buildUnpavedRoadDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'narrow_road':
+      buildNarrowRoadDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'flyover':
+      buildFlyoverDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+    case 'countryside':
+    default:
+      buildCountrysideDecorations(group, totalWidth, segmentLength, milestone);
+      break;
+  }
+
+  return group;
+}
+
+/**
+ * 1. Countryside View ("গ্রামীন জনপদ / ধানক্ষেত")
+ * Lush green paddy fields, coconut and palm trees, roadside ponds ("পুকুর"), mud & tin houses ("টিনের ঘর")
+ */
+function buildCountrysideDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Emerald rice paddies terrain
+  const terrainGeo = new THREE.PlaneGeometry(160, segmentLength).rotateX(-Math.PI / 2);
+  const terrainMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.95 });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, -0.05, 0);
   terrain.receiveShadow = true;
   group.add(terrain);
 
-  // Add roadside Palm trees and Bengali Milestone marker
-  const halfRoad = totalWidth / 2;
+  // Roadside water pond with blue-green water and lily pads
+  const pondGeo = new THREE.PlaneGeometry(18, 42).rotateX(-Math.PI / 2);
+  const pondMat = new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.2, metalness: 0.3 });
+  const pond = new THREE.Mesh(pondGeo, pondMat);
+  pond.position.set(-halfRoad - 18, -0.02, 10);
+  group.add(pond);
 
-  // Dense roadside palm trees for rich peripheral parallax motion (every 16m)
-  for (let z = -segmentLength / 2 + 8; z < segmentLength / 2; z += 16) {
+  // Roadside Palm trees & Betel Nut trees
+  for (let z = -segmentLength / 2 + 10; z < segmentLength / 2; z += 18) {
     const palmL = createPalmTree();
-    palmL.position.set(-halfRoad - 3.5 - Math.random() * 4, 0, z);
+    palmL.position.set(-halfRoad - 4 - Math.random() * 5, 0, z);
     group.add(palmL);
 
     const palmR = createPalmTree();
-    palmR.position.set(halfRoad + 3.5 + Math.random() * 4, 0, z + 8);
+    palmR.position.set(halfRoad + 4 + Math.random() * 5, 0, z + 9);
     group.add(palmR);
   }
 
-  // Add occasional Roadside Tea Stall ("টং দোকান") or Milestone
-  const milestone = createMilestoneMarker();
-  milestone.position.set(-halfRoad - 1.2, 0, -20);
-  group.add(milestone);
+  // Corrugated Tin Roof Houses ("টিনের ঘর")
+  const house1 = createTinHouse(0x94a3b8);
+  house1.position.set(halfRoad + 16, 0, -25);
+  group.add(house1);
 
-  return group;
+  const house2 = createTinHouse(0x0284c7);
+  house2.position.set(-halfRoad - 22, 0, 30);
+  group.add(house2);
+
+  // Authentic Roadside Tea Stall ("টং দোকান")
+  const teaStall = createBengaliShop('আল্লাহর দান চা স্টল', 'চা, বিস্কুট ও পান', '#15803d', 0x16a34a);
+  teaStall.position.set(-halfRoad - 5.5, 0, -15);
+  teaStall.rotation.y = Math.PI / 2;
+  group.add(teaStall);
+
+  // Milestone marker
+  const milestoneMarker = createMilestoneMarker(milestone?.districtBn || 'ঢাকা', milestone ? 50 - (milestone.elevationY * 2) : 25);
+  milestoneMarker.position.set(-halfRoad - 1.2, 0, 20);
+  group.add(milestoneMarker);
+}
+
+/**
+ * 2. Town Bazaar View ("হাইওয়ে বাজার ও মফস্বল শহর")
+ * Dense roadside brick shops, Bengali signboards, striped storefront awnings, overhead powerlines
+ */
+function buildTownBazaarDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Town asphalt sidewalk / ground
+  const groundGeo = new THREE.PlaneGeometry(140, segmentLength).rotateX(-Math.PI / 2);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.position.set(0, -0.05, 0);
+  ground.receiveShadow = true;
+  group.add(ground);
+
+  // Left side shops: Hotel New Dhaka, Bhai Bhai Workshop, Meghna Sweets
+  const shopConfigsL = [
+    { name: 'হোটেল নিউ ঢাকা', sub: 'কাচ্চি বিরিয়ানি ও চা', bg: '#991b1b', awning: 0xdc2626, z: -35 },
+    { name: 'ভাই ভাই অটো পার্টস', sub: 'টায়ার সার্ভিস ও মেকানিক', bg: '#1e3a8a', awning: 0x2563eb, z: 5 },
+    { name: 'মেঘনা মিষ্টি ভান্ডার', sub: 'রসমালাই ও দধি', bg: '#15803d', awning: 0x16a34a, z: 42 },
+  ];
+
+  shopConfigsL.forEach((cfg) => {
+    const shop = createBengaliShop(cfg.name, cfg.sub, cfg.bg, cfg.awning);
+    shop.position.set(-halfRoad - 7.5, 0, cfg.z);
+    shop.rotation.y = Math.PI / 2;
+    group.add(shop);
+  });
+
+  // Right side shops: Telecom, Pharmacy, Fruit Stall
+  const shopConfigsR = [
+    { name: 'বিকাশ ও ফ্লেক্সিলোড', sub: 'মোবাইল রিচার্জ পয়েন্ট', bg: '#be185d', awning: 0xdb2777, z: -25 },
+    { name: 'মা ফার্মেসী', sub: 'দেশী-বিদেশী ঔষধ', bg: '#0369a1', awning: 0x0284c7, z: 15 },
+    { name: 'সততা ফল ভান্ডার', sub: 'তাজা আম, কলা ও আপেল', bg: '#b45309', awning: 0xd97706, z: 50 },
+  ];
+
+  shopConfigsR.forEach((cfg) => {
+    const shop = createBengaliShop(cfg.name, cfg.sub, cfg.bg, cfg.awning);
+    shop.position.set(halfRoad + 7.5, 0, cfg.z);
+    shop.rotation.y = -Math.PI / 2;
+    group.add(shop);
+  });
+
+  // Concrete utility electric poles with crossarms
+  for (let z = -segmentLength / 2 + 10; z < segmentLength / 2; z += 30) {
+    const poleL = createElectricPole();
+    poleL.position.set(-halfRoad - 2.8, 0, z);
+    group.add(poleL);
+
+    const poleR = createElectricPole();
+    poleR.position.set(halfRoad + 2.8, 0, z + 15);
+    group.add(poleR);
+  }
+
+  // Overhead Town Bazaar Welcome Gantry
+  const gantry = createHighwayGantry(
+    totalWidth,
+    milestone?.nameBn || 'দাউদকান্দি হাইওয়ে বাজার',
+    'গতিসীমা ৩০ কিমি · বাজার এলাকা'
+  );
+  gantry.position.set(0, 0, -45);
+  group.add(gantry);
+}
+
+/**
+ * 3. Long River Bridges (Padma Bridge, Jamuna Bridge, Meghna Bridge)
+ * Vast river water underneath, high concrete piers, steel Warren trusses / box girders, safety parapets
+ */
+function buildLongBridgeDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+  const bridgeStyle = milestone?.bridgeStyle || 'padma';
+
+  // 1. Shimmering River Water (Padma / Jamuna / Meghna River)
+  const waterGeo = new THREE.PlaneGeometry(240, segmentLength).rotateX(-Math.PI / 2);
+  const waterTex = createWaterTexture();
+  const waterMat = new THREE.MeshStandardMaterial({
+    map: waterTex,
+    roughness: 0.15,
+    metalness: 0.5,
+    color: 0x155e75,
+  });
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.position.set(0, -6.5, 0); // 6.5 meters below bridge deck
+  water.receiveShadow = true;
+  group.add(water);
+
+  // 2. Concrete Bridge Pier Columns descending into river water (every 30m)
+  const pierMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7, metalness: 0.2 });
+  const pierGeo = new THREE.CylinderGeometry(1.6, 2.0, 7.5, 16);
+
+  for (let z = -segmentLength / 2 + 15; z < segmentLength / 2; z += 30) {
+    const pierL = new THREE.Mesh(pierGeo, pierMat);
+    pierL.position.set(-halfRoad + 1.2, -3.5, z);
+    pierL.castShadow = true;
+    group.add(pierL);
+
+    const pierR = new THREE.Mesh(pierGeo, pierMat);
+    pierR.position.set(halfRoad - 1.2, -3.5, z);
+    pierR.castShadow = true;
+    group.add(pierR);
+  }
+
+  // 3. Concrete Crash Barrier Parapets along both bridge sides
+  const parapetGeo = new THREE.BoxGeometry(0.45, 1.15, segmentLength);
+  const parapetMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.6 });
+
+  const parapetL = new THREE.Mesh(parapetGeo, parapetMat);
+  parapetL.position.set(-halfRoad - 0.25, 0.58, 0);
+  parapetL.castShadow = true;
+  group.add(parapetL);
+
+  const parapetR = new THREE.Mesh(parapetGeo, parapetMat);
+  parapetR.position.set(halfRoad + 0.25, 0.58, 0);
+  parapetR.castShadow = true;
+  group.add(parapetR);
+
+  // 4. Iconic Bridge Superstructures:
+  if (bridgeStyle === 'padma') {
+    // Signature Padma Multipurpose Bridge Warren Steel Truss (Steel diagonals & top chords)
+    const trussMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, metalness: 0.65, roughness: 0.35 });
+    const trussHeight = 8.5;
+    const trussPitch = 12;
+
+    for (let z = -segmentLength / 2; z < segmentLength / 2; z += trussPitch) {
+      // Diagonal steel struts left and right
+      const strutGeo = new THREE.CylinderGeometry(0.18, 0.18, 9.8, 6);
+      const strutL1 = new THREE.Mesh(strutGeo, trussMat);
+      strutL1.position.set(-halfRoad - 0.3, trussHeight / 2, z + trussPitch / 2);
+      strutL1.rotation.x = 0.5;
+      group.add(strutL1);
+
+      const strutL2 = new THREE.Mesh(strutGeo, trussMat);
+      strutL2.position.set(-halfRoad - 0.3, trussHeight / 2, z + trussPitch / 2);
+      strutL2.rotation.x = -0.5;
+      group.add(strutL2);
+
+      const strutR1 = new THREE.Mesh(strutGeo, trussMat);
+      strutR1.position.set(halfRoad + 0.3, trussHeight / 2, z + trussPitch / 2);
+      strutR1.rotation.x = 0.5;
+      group.add(strutR1);
+
+      const strutR2 = new THREE.Mesh(strutGeo, trussMat);
+      strutR2.position.set(halfRoad + 0.3, trussHeight / 2, z + trussPitch / 2);
+      strutR2.rotation.x = -0.5;
+      group.add(strutR2);
+
+      // Overhead cross bracing beam
+      const crossBeamGeo = new THREE.BoxGeometry(totalWidth + 1.2, 0.3, 0.3);
+      const crossBeam = new THREE.Mesh(crossBeamGeo, trussMat);
+      crossBeam.position.set(0, trussHeight, z);
+      group.add(crossBeam);
+    }
+  } else if (bridgeStyle === 'jamuna') {
+    // Bangabandhu Jamuna Bridge: Parallel Railway track alongside bridge deck!
+    const railBedGeo = new THREE.BoxGeometry(3.5, 0.5, segmentLength);
+    const railBedMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+    const railBed = new THREE.Mesh(railBedGeo, railBedMat);
+    railBed.position.set(halfRoad + 3.0, 0.1, 0);
+    group.add(railBed);
+
+    // Steel rails
+    const railSteelGeo = new THREE.BoxGeometry(0.12, 0.18, segmentLength);
+    const railSteelMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+    const rail1 = new THREE.Mesh(railSteelGeo, railSteelMat);
+    rail1.position.set(halfRoad + 2.3, 0.45, 0);
+    group.add(rail1);
+
+    const rail2 = new THREE.Mesh(railSteelGeo, railSteelMat);
+    rail2.position.set(halfRoad + 3.7, 0.45, 0);
+    group.add(rail2);
+  }
+
+  // Bridge Entrance / Milestone Gantry Sign
+  const gantry = createHighwayGantry(
+    totalWidth,
+    milestone?.nameBn || 'পদ্মা বহুমুখী সেতু',
+    'নদী: পদ্মা · গতিসীমা ৮০ কিমি/ঘণ্টা'
+  );
+  gantry.position.set(0, 0, -50);
+  group.add(gantry);
+}
+
+/**
+ * 4. Small Bridge / Culvert ("কালভার্ট ও বেইলি ব্রিজ")
+ * Green/blue steel lattice diamond railings, canal underneath ("খাল"), concrete abutments
+ */
+function buildSmallBridgeDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Canal water under the small bridge
+  const canalGeo = new THREE.PlaneGeometry(160, segmentLength).rotateX(-Math.PI / 2);
+  const canalMat = new THREE.MeshStandardMaterial({ color: 0x164e63, roughness: 0.25, metalness: 0.3 });
+  const canal = new THREE.Mesh(canalGeo, canalMat);
+  canal.position.set(0, -3.2, 0);
+  group.add(canal);
+
+  // Concrete canal banks at edges
+  const bankGeo = new THREE.BoxGeometry(160, 3.2, 12);
+  const bankMat = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.9 });
+  const bank1 = new THREE.Mesh(bankGeo, bankMat);
+  bank1.position.set(0, -1.6, -segmentLength / 2 + 6);
+  group.add(bank1);
+
+  const bank2 = new THREE.Mesh(bankGeo, bankMat);
+  bank2.position.set(0, -1.6, segmentLength / 2 - 6);
+  group.add(bank2);
+
+  // Bailey Bridge Steel Diamond Lattice Railings (Signature British/Bangladesh RHD blue-green steel)
+  const baileyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.7, roughness: 0.4 });
+  const panelPitch = 3.5;
+
+  for (let z = -segmentLength / 2 + 2; z < segmentLength / 2 - 2; z += panelPitch) {
+    const postGeo = new THREE.BoxGeometry(0.15, 1.4, 0.15);
+    const postL = new THREE.Mesh(postGeo, baileyMat);
+    postL.position.set(-halfRoad - 0.2, 0.7, z);
+    group.add(postL);
+
+    const postR = new THREE.Mesh(postGeo, baileyMat);
+    postR.position.set(halfRoad + 0.2, 0.7, z);
+    group.add(postR);
+
+    // Diagonal lattice 'X' brace
+    const braceGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6);
+    const braceL1 = new THREE.Mesh(braceGeo, baileyMat);
+    braceL1.position.set(-halfRoad - 0.2, 0.7, z + panelPitch / 2);
+    braceL1.rotation.x = 0.6;
+    group.add(braceL1);
+
+    const braceL2 = new THREE.Mesh(braceGeo, baileyMat);
+    braceL2.position.set(-halfRoad - 0.2, 0.7, z + panelPitch / 2);
+    braceL2.rotation.x = -0.6;
+    group.add(braceL2);
+
+    const braceR1 = new THREE.Mesh(braceGeo, baileyMat);
+    braceR1.position.set(halfRoad + 0.2, 0.7, z + panelPitch / 2);
+    braceR1.rotation.x = 0.6;
+    group.add(braceR1);
+
+    const braceR2 = new THREE.Mesh(braceGeo, baileyMat);
+    braceR2.position.set(halfRoad + 0.2, 0.7, z + panelPitch / 2);
+    braceR2.rotation.x = -0.6;
+    group.add(braceR2);
+  }
+
+  // Small bridge RHD signboard
+  const sign = createMilestoneMarker(milestone?.districtBn || 'মুন্সীগঞ্জ', 12);
+  sign.position.set(-halfRoad - 1.2, 0, -30);
+  group.add(sign);
+}
+
+/**
+ * 5. Highly Unpaved Roads ("ভাঙাচোরা মাটির ও ইটের সড়ক / খানাখন্দ")
+ * Clay mud terrain, stacks of red bricks ("ইটের পাঁজা"), gravel heaps, roadwork warning signs
+ */
+function buildUnpavedRoadDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Reddish-brown clay and gravel terrain
+  const terrainGeo = new THREE.PlaneGeometry(150, segmentLength).rotateX(-Math.PI / 2);
+  const terrainMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.98 });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.position.set(0, -0.05, 0);
+  terrain.receiveShadow = true;
+  group.add(terrain);
+
+  // Terracotta Brick Stacks along roadside ("ইটের পাঁজা")
+  const brickStackMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.9 });
+  const brickPositions = [-40, -15, 12, 38];
+
+  brickPositions.forEach((bz) => {
+    const stackGeo = new THREE.BoxGeometry(2.2, 1.4, 3.5);
+    const stackL = new THREE.Mesh(stackGeo, brickStackMat);
+    stackL.position.set(-halfRoad - 3.2, 0.7, bz);
+    stackL.castShadow = true;
+    group.add(stackL);
+
+    // Gravel heap on opposite side
+    const gravelGeo = new THREE.ConeGeometry(2.0, 1.2, 8);
+    const gravelMat = new THREE.MeshStandardMaterial({ color: 0x57534e, roughness: 0.95 });
+    const gravelR = new THREE.Mesh(gravelGeo, gravelMat);
+    gravelR.position.set(halfRoad + 3.2, 0.6, bz + 10);
+    gravelR.castShadow = true;
+    group.add(gravelR);
+  });
+
+  // Roadwork Warning Signboard ("রাস্তার কাজ চলিতেছে - ধীরগতি")
+  const signGroup = new THREE.Group();
+  const signPostGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.8, 6);
+  const signPostMat = new THREE.MeshStandardMaterial({ color: 0x52525b });
+  const post = new THREE.Mesh(signPostGeo, signPostMat);
+  post.position.y = 1.4;
+  signGroup.add(post);
+
+  const signBoardGeo = new THREE.BoxGeometry(2.2, 1.2, 0.08);
+  const signBoardMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 });
+  const board = new THREE.Mesh(signBoardGeo, signBoardMat);
+  board.position.y = 2.2;
+  signGroup.add(board);
+
+  signGroup.position.set(-halfRoad - 2.5, 0, -25);
+  group.add(signGroup);
+}
+
+/**
+ * 6. Narrow Road ("সংকীর্ণ ২-লেন গ্রামীণ মহাসড়ক")
+ * Tight road boundary, dense tree canopy meeting overhead, steep roadside ditch
+ */
+function buildNarrowRoadDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Roadside ditch terrain
+  const terrainGeo = new THREE.PlaneGeometry(130, segmentLength).rotateX(-Math.PI / 2);
+  const terrainMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.95 });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.position.set(0, -0.05, 0);
+  group.add(terrain);
+
+  // Towering Rain Trees ("রেইনট্রি ও মেহগনি গাছ") with branches forming an overhead tunnel canopy
+  for (let z = -segmentLength / 2 + 6; z < segmentLength / 2; z += 14) {
+    const treeL = createRainTree(true);
+    treeL.position.set(-halfRoad - 1.8, 0, z);
+    group.add(treeL);
+
+    const treeR = createRainTree(false);
+    treeR.position.set(halfRoad + 1.8, 0, z + 7);
+    group.add(treeR);
+  }
+}
+
+/**
+ * 7. Flyover / Elevated Expressway ("মেয়র হানিফ ফ্লাইওভার / ঢাকা এলিভেটেড এক্সপ্রেসওয়ে")
+ * Elevated viaduct on concrete piers, solid crash parapet barriers with hazard markings, city below
+ */
+function buildFlyoverDecorations(
+  group: THREE.Group,
+  totalWidth: number,
+  segmentLength: number,
+  milestone?: MilestoneDefinition
+) {
+  const halfRoad = totalWidth / 2;
+
+  // Ground level below flyover (Dhaka city streets)
+  const cityGroundGeo = new THREE.PlaneGeometry(200, segmentLength).rotateX(-Math.PI / 2);
+  const cityGroundMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+  const cityGround = new THREE.Mesh(cityGroundGeo, cityGroundMat);
+  cityGround.position.set(0, -8.0, 0); // 8 meters below flyover
+  group.add(cityGround);
+
+  // Massive Cylindrical Concrete Flyover Pillars
+  const columnMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.6 });
+  const columnGeo = new THREE.CylinderGeometry(1.8, 2.2, 8.5, 16);
+
+  for (let z = -segmentLength / 2 + 15; z < segmentLength / 2; z += 30) {
+    const col = new THREE.Mesh(columnGeo, columnMat);
+    col.position.set(0, -4.0, z);
+    col.castShadow = true;
+    group.add(col);
+
+    // Hammerhead pier cap supporting the deck
+    const capGeo = new THREE.BoxGeometry(totalWidth + 1.5, 1.2, 3.5);
+    const cap = new THREE.Mesh(capGeo, columnMat);
+    cap.position.set(0, -0.6, z);
+    group.add(cap);
+  }
+
+  // Solid Concrete Parapet Crash Barriers
+  const parapetGeo = new THREE.BoxGeometry(0.5, 1.3, segmentLength);
+  const parapetMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.6 });
+
+  const parL = new THREE.Mesh(parapetGeo, parapetMat);
+  parL.position.set(-halfRoad - 0.25, 0.65, 0);
+  parL.castShadow = true;
+  group.add(parL);
+
+  const parR = new THREE.Mesh(parapetGeo, parapetMat);
+  parR.position.set(halfRoad + 0.25, 0.65, 0);
+  parR.castShadow = true;
+  group.add(parR);
+
+  // City buildings on ground level far below
+  for (let z = -segmentLength / 2 + 15; z < segmentLength / 2; z += 40) {
+    const b1 = createCityBuilding(14, 18);
+    b1.position.set(-halfRoad - 30, -8.0, z);
+    group.add(b1);
+
+    const b2 = createCityBuilding(16, 22);
+    b2.position.set(halfRoad + 30, -8.0, z + 20);
+    group.add(b2);
+  }
+
+  // Overhead Elevated Expressway Gantry
+  const gantry = createHighwayGantry(
+    totalWidth,
+    milestone?.nameBn || 'মেয়র হানিফ ফ্লাইওভার',
+    'ঢাকা এলিভেটেড এক্সপ্রেসওয়ে · টোল রোড'
+  );
+  gantry.position.set(0, 0, -40);
+  group.add(gantry);
+}
+
+/**
+ * Creates authentic Bangladeshi shop building with signboard and striped awning
+ */
+function createBengaliShop(
+  shopName: string,
+  sub: string,
+  bgColor: string,
+  awningColorHex: number
+): THREE.Group {
+  const shop = new THREE.Group();
+
+  // Brick building body
+  const bodyGeo = new THREE.BoxGeometry(6.5, 4.0, 5.0);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.85 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 2.0;
+  body.castShadow = true;
+  shop.add(body);
+
+  // Slanted Striped Storefront Awning
+  const awningGeo = new THREE.BoxGeometry(6.8, 0.12, 2.2);
+  const awningMat = new THREE.MeshStandardMaterial({ color: awningColorHex, roughness: 0.6 });
+  const awning = new THREE.Mesh(awningGeo, awningMat);
+  awning.position.set(0, 2.8, 3.2);
+  awning.rotation.x = 0.35;
+  shop.add(awning);
+
+  // Bengali Shop Signboard
+  const signTex = createShopSignTexture(shopName, sub, bgColor);
+  const signGeo = new THREE.PlaneGeometry(5.8, 1.8);
+  const signMat = new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.4 });
+  const sign = new THREE.Mesh(signGeo, signMat);
+  sign.position.set(0, 3.4, 2.52);
+  shop.add(sign);
+
+  return shop;
+}
+
+/**
+ * Creates authentic Bengali Corrugated Tin-Roof House ("টিনের ঘর")
+ */
+function createTinHouse(tinColorHex: number): THREE.Group {
+  const house = new THREE.Group();
+
+  // Wooden / Mud Walls
+  const wallGeo = new THREE.BoxGeometry(6.0, 2.6, 5.0);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.9 });
+  const wall = new THREE.Mesh(wallGeo, wallMat);
+  wall.position.y = 1.3;
+  wall.castShadow = true;
+  house.add(wall);
+
+  // Corrugated Tin Gable Roof
+  const roofGeo = new THREE.ConeGeometry(4.8, 1.8, 4);
+  roofGeo.rotateY(Math.PI / 4);
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: tinColorHex,
+    metalness: 0.65,
+    roughness: 0.45,
+  });
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.y = 3.5;
+  roof.castShadow = true;
+  house.add(roof);
+
+  return house;
 }
 
 /**
@@ -1061,20 +1655,17 @@ function createStreetlightPole(): THREE.Group {
     emissiveIntensity: 0.7,
   });
 
-  // Vertical steel mast
   const mastGeo = new THREE.CylinderGeometry(0.12, 0.16, 7.5, 8);
   const mast = new THREE.Mesh(mastGeo, poleMat);
   mast.position.y = 3.75;
   mast.castShadow = true;
   pole.add(mast);
 
-  // Dual cantilever arms extending over left and right lanes
   const armGeo = new THREE.BoxGeometry(2.8, 0.08, 0.08);
   const arm = new THREE.Mesh(armGeo, poleMat);
   arm.position.y = 7.3;
   pole.add(arm);
 
-  // Left & right lamp fixtures
   const fixtureGeo = new THREE.BoxGeometry(0.5, 0.12, 0.25);
   const lampL = new THREE.Mesh(fixtureGeo, lampMat);
   lampL.position.set(1.4, 7.22, 0);
@@ -1088,13 +1679,32 @@ function createStreetlightPole(): THREE.Group {
 }
 
 /**
+ * Creates roadside wooden electric pole with crossarm
+ */
+function createElectricPole(): THREE.Group {
+  const pole = new THREE.Group();
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 });
+
+  const mastGeo = new THREE.CylinderGeometry(0.1, 0.14, 8.0, 6);
+  const mast = new THREE.Mesh(mastGeo, woodMat);
+  mast.position.y = 4.0;
+  pole.add(mast);
+
+  const crossGeo = new THREE.BoxGeometry(1.8, 0.1, 0.1);
+  const cross = new THREE.Mesh(crossGeo, woodMat);
+  cross.position.y = 7.5;
+  pole.add(cross);
+
+  return pole;
+}
+
+/**
  * Creates authentic Bengali roadside Palm tree
  */
 function createPalmTree(): THREE.Group {
   const tree = new THREE.Group();
   const height = 7 + Math.random() * 3;
 
-  // Curved slender trunk
   const curve = new THREE.CatmullRomCurve3([
     new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(Math.random() * 0.5 - 0.25, height * 0.5, 0),
@@ -1106,7 +1716,6 @@ function createPalmTree(): THREE.Group {
   trunk.castShadow = true;
   tree.add(trunk);
 
-  // Crown Fronds
   const frondGeo = new THREE.ConeGeometry(2.8, 1.2, 5);
   const frondMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.85 });
   const crown = new THREE.Mesh(frondGeo, frondMat);
@@ -1119,56 +1728,104 @@ function createPalmTree(): THREE.Group {
 }
 
 /**
+ * Creates towering Rain Tree with canopy extending over the highway
+ */
+function createRainTree(leanRight: boolean): THREE.Group {
+  const tree = new THREE.Group();
+  const trunkGeo = new THREE.CylinderGeometry(0.35, 0.55, 9.5, 8);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 });
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.y = 4.75;
+  trunk.rotation.z = leanRight ? -0.18 : 0.18; // Lean slightly over the roadway
+  trunk.castShadow = true;
+  tree.add(trunk);
+
+  // Large spreading leafy canopy
+  const foliageGeo = new THREE.SphereGeometry(4.2, 7, 6);
+  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.85 });
+  const canopy = new THREE.Mesh(foliageGeo, foliageMat);
+  canopy.position.set(leanRight ? 2.5 : -2.5, 9.8, 0);
+  canopy.scale.set(1.5, 0.8, 1.5);
+  canopy.castShadow = true;
+  tree.add(canopy);
+
+  return tree;
+}
+
+/**
+ * Creates simple distant city background building for flyovers
+ */
+function createCityBuilding(width: number, height: number): THREE.Mesh {
+  const geo = new THREE.BoxGeometry(width, height, width);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85 });
+  const b = new THREE.Mesh(geo, mat);
+  b.position.y = height / 2;
+  return b;
+}
+
+/**
  * Creates authentic concrete Highway Milestone marker (e.g. ঢাকা ৫০ কি.মি.)
  */
-function createMilestoneMarker(): THREE.Group {
+export function createMilestoneMarker(placeBn = 'ঢাকা', km = 25): THREE.Group {
   const group = new THREE.Group();
 
-  const baseGeo = new THREE.BoxGeometry(0.5, 0.8, 0.25);
+  const baseGeo = new THREE.BoxGeometry(0.6, 0.85, 0.3);
   const baseMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
   const base = new THREE.Mesh(baseGeo, baseMat);
-  base.position.y = 0.4;
+  base.position.y = 0.42;
   group.add(base);
 
   // Yellow rounded dome top
-  const domeGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.25, 12);
+  const domeGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.3, 12);
   domeGeo.rotateZ(Math.PI / 2);
   const domeMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.8 });
   const dome = new THREE.Mesh(domeGeo, domeMat);
-  dome.position.y = 0.85;
+  dome.position.y = 0.92;
   group.add(dome);
+
+  // Milestone Face Sign
+  const faceTex = createCustomMilestoneTexture(placeBn, km);
+  const faceGeo = new THREE.PlaneGeometry(0.55, 0.8);
+  const faceMat = new THREE.MeshBasicMaterial({ map: faceTex });
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.position.set(0, 0.5, 0.16);
+  group.add(face);
 
   return group;
 }
 
 /**
- * Creates Overhead Highway Gantry with Green Signboard
+ * Creates Overhead Highway Gantry with custom Bengali text
  */
-export function createHighwayGantry(roadWidth: number): THREE.Group {
+export function createHighwayGantry(
+  roadWidth: number,
+  titleBn = 'পদ্মা সেতু এক্সপ্রেসওয়ে',
+  subBn = 'গতিসীমা ৮০ কিমি/ঘণ্টা'
+): THREE.Group {
   const gantry = new THREE.Group();
 
-  const postGeo = new THREE.CylinderGeometry(0.2, 0.2, 7.5, 8);
+  const postGeo = new THREE.CylinderGeometry(0.2, 0.2, 8.5, 8);
   const metalMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4, metalness: 0.7 });
 
   const postL = new THREE.Mesh(postGeo, metalMat);
-  postL.position.set(-roadWidth / 2 - 1.5, 3.75, 0);
+  postL.position.set(-roadWidth / 2 - 1.5, 4.25, 0);
   gantry.add(postL);
 
   const postR = new THREE.Mesh(postGeo, metalMat);
-  postR.position.set(roadWidth / 2 + 1.5, 3.75, 0);
+  postR.position.set(roadWidth / 2 + 1.5, 4.25, 0);
   gantry.add(postR);
 
-  const crossGeo = new THREE.BoxGeometry(roadWidth + 4, 0.4, 0.4);
+  const crossGeo = new THREE.BoxGeometry(roadWidth + 4, 0.45, 0.45);
   const cross = new THREE.Mesh(crossGeo, metalMat);
-  cross.position.set(0, 7.0, 0);
+  cross.position.set(0, 7.8, 0);
   gantry.add(cross);
 
   // Signboard
-  const signTex = createHighwaySignTexture();
-  const signGeo = new THREE.PlaneGeometry(6.5, 2.5);
+  const signTex = createBridgeNameSignTexture(titleBn, subBn);
+  const signGeo = new THREE.PlaneGeometry(7.2, 2.8);
   const signMat = new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.5 });
   const sign = new THREE.Mesh(signGeo, signMat);
-  sign.position.set(0, 5.8, 0.22);
+  sign.position.set(0, 6.4, 0.25);
   gantry.add(sign);
 
   return gantry;

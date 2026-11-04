@@ -334,4 +334,45 @@ test('trafficRules: evaluateHornYield only yields for vehicle directly ahead whe
   assert.equal(evalOtherLane.reason, 'no_vehicle_in_path', 'Vehicles in other lanes must never react to horn');
 });
 
+test('zones: Bangladeshi highway landmarks, bridges, bazaars, and flyovers exist and cycle', async () => {
+  const { getMilestoneAtZ, getLocationInfoAtZ, HIGHWAY_MILESTONES, ZONE_SEGMENT_SPAN } = await import('./zones');
+
+  // Verify all required Bangladeshi environments are represented
+  const zoneTypes = new Set(HIGHWAY_MILESTONES.map((m) => m.zoneType));
+  assert.ok(zoneTypes.has('countryside'), 'Should include countryside view');
+  assert.ok(zoneTypes.has('town_bazaar'), 'Should include town bazaar view');
+  assert.ok(zoneTypes.has('long_bridge'), 'Should include long bridges');
+  assert.ok(zoneTypes.has('small_bridge'), 'Should include small bridge / culvert');
+  assert.ok(zoneTypes.has('unpaved'), 'Should include highly unpaved roads');
+  assert.ok(zoneTypes.has('narrow_road'), 'Should include narrow road');
+  assert.ok(zoneTypes.has('flyover'), 'Should include flyover / elevated expressway');
+
+  // Verify iconic bridges specifically requested
+  const bridgeNames = HIGHWAY_MILESTONES.filter((m) => m.zoneType === 'long_bridge').map((m) => m.nameBn);
+  assert.ok(bridgeNames.some((n) => n.includes('পদ্মা')), 'Should include Padma Bridge');
+  assert.ok(bridgeNames.some((n) => n.includes('যমুনা')), 'Should include Jamuna Bridge');
+  assert.ok(bridgeNames.some((n) => n.includes('মেঘনা')), 'Should include Meghna Bridge');
+
+  // Verify milestone progression at various Z coordinates
+  const startLoc = getLocationInfoAtZ(50);
+  assert.ok(startLoc.nameBn.length > 0);
+  assert.ok(startLoc.nameEn.length > 0);
+  assert.ok(startLoc.badgeBn.length > 0);
+  assert.ok(startLoc.nextDestinationBn.length > 0);
+  assert.ok(startLoc.nextDistanceKm >= 0);
+
+  // Milestone transition across zone span
+  const nextZoneZ = ZONE_SEGMENT_SPAN + 50;
+  const nextLoc = getLocationInfoAtZ(nextZoneZ);
+  assert.notEqual(startLoc.id, nextLoc.id, 'Should advance to next milestone after ZONE_SEGMENT_SPAN');
+
+  // Unpaved zone has high roughness
+  const unpavedMilestone = HIGHWAY_MILESTONES.find((m) => m.zoneType === 'unpaved');
+  assert.ok(unpavedMilestone && unpavedMilestone.roughness >= 0.8, 'Unpaved zone should have high roughness');
+
+  // Narrow road has isNarrow flag
+  const narrowMilestone = HIGHWAY_MILESTONES.find((m) => m.zoneType === 'narrow_road');
+  assert.ok(narrowMilestone && narrowMilestone.isNarrow === true, 'Narrow road must set isNarrow to true');
+});
+
 

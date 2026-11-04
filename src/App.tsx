@@ -19,6 +19,8 @@ import { HUD } from './components/HUD';
 import { GameShell } from './components/GameShell';
 import { audioManager } from './game/audio';
 
+import { getLocationInfoAtZ } from './game/zones';
+
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
@@ -39,6 +41,8 @@ export default function App() {
     nearMissCount: 0,
     counterLaneMeters: 0,
     maxSpeedKmh: 0,
+    currentLocation: getLocationInfoAtZ(0),
+    locationToast: null,
     closeOvertakeNotification: null,
   });
 

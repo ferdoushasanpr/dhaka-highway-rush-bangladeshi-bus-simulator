@@ -623,3 +623,257 @@ export function createHighwaySignTexture(): THREE.CanvasTexture {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
+
+/**
+ * Creates Unpaved Broken Clay & Brick Road Texture ("ভাঙাচোরা মাটির ও ইটের সড়ক")
+ */
+export function createUnpavedRoadTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Clay mud reddish-brown base
+  ctx.fillStyle = '#653a2a';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Patches of eroded grey asphalt remnants
+  for (let i = 0; i < 24; i++) {
+    const px = Math.random() * 512;
+    const py = Math.random() * 512;
+    const rad = 25 + Math.random() * 60;
+    ctx.fillStyle = 'rgba(40, 44, 52, 0.55)';
+    ctx.beginPath();
+    ctx.ellipse(px, py, rad, rad * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Terracotta broken brick shards ("ইটের সুরকি ও খোয়া")
+  for (let i = 0; i < 800; i++) {
+    const bx = Math.random() * 512;
+    const by = Math.random() * 512;
+    const bColor = Math.random() > 0.5 ? '#b91c1c' : '#c2410c';
+    ctx.fillStyle = bColor;
+    ctx.fillRect(bx, by, 3 + Math.random() * 4, 2 + Math.random() * 3);
+  }
+
+  // Dark pothole / puddle craters
+  for (let i = 0; i < 8; i++) {
+    const hx = 60 + Math.random() * 390;
+    const hy = 60 + Math.random() * 390;
+    const grad = ctx.createRadialGradient(hx, hy, 4, hx, hy, 35);
+    grad.addColorStop(0, '#2d1810');
+    grad.addColorStop(0.7, '#452619');
+    grad.addColorStop(1, 'rgba(101, 58, 42, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 6);
+  return texture;
+}
+
+/**
+ * Creates Concrete Bridge Deck Texture with expansion joints
+ */
+export function createBridgeDeckTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Smooth engineered concrete
+  ctx.fillStyle = '#3f3f46';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Concrete texture grain
+  for (let i = 0; i < 8000; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const b = Math.floor(55 + Math.random() * 25);
+    ctx.fillStyle = `rgb(${b},${b},${b})`;
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  // Steel expansion joint finger plate across the deck
+  ctx.fillStyle = '#18181b';
+  ctx.fillRect(0, 250, 512, 12);
+  ctx.fillStyle = '#71717a';
+  for (let x = 0; x < 512; x += 16) {
+    ctx.fillRect(x, 250, 8, 12);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 4);
+  return texture;
+}
+
+/**
+ * Creates Clean Viaduct Concrete Texture for Flyovers
+ */
+export function createFlyoverDeckTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Smooth dark asphalt/concrete
+  ctx.fillStyle = '#27272a';
+  ctx.fillRect(0, 0, 512, 512);
+
+  for (let i = 0; i < 6000; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const b = Math.floor(40 + Math.random() * 20);
+    ctx.fillStyle = `rgb(${b},${b},${b})`;
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 6);
+  return texture;
+}
+
+/**
+ * Creates River Water Texture (Padma, Jamuna, Meghna)
+ */
+export function createWaterTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Deep river silt water (blue-green tinted river)
+  ctx.fillStyle = '#0f3844';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Soft silt ripples
+  for (let y = 0; y < 512; y += 16) {
+    ctx.strokeStyle = 'rgba(45, 125, 140, 0.35)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= 512; x += 32) {
+      ctx.lineTo(x, y + Math.sin(x * 0.05 + y) * 4);
+    }
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(4, 4);
+  return texture;
+}
+
+/**
+ * Creates authentic Bengali Highway Shop Signboard
+ */
+export function createShopSignTexture(
+  shopName: string,
+  sub: string,
+  bgColor: string = '#1e3a8a',
+  textColor: string = '#ffffff'
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, 512, 160);
+
+  // Border outline
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(6, 6, 500, 148);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = textColor;
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 6;
+  ctx.font = 'bold 36px "SolaimanLipi", sans-serif';
+  ctx.fillText(shopName, 256, 68);
+
+  ctx.fillStyle = '#fef08a';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.fillText(sub, 256, 120);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Creates Bridge Name Gantry Sign (e.g. পদ্মা বহুমুখী সেতু)
+ */
+export function createBridgeNameSignTexture(nameBn: string, riverBn: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  // Green Highway Sign
+  ctx.fillStyle = '#065f46';
+  ctx.fillRect(0, 0, 512, 256);
+
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(10, 10, 492, 236);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 38px "SolaimanLipi", sans-serif';
+  ctx.fillText(nameBn, 256, 85);
+
+  ctx.fillStyle = '#fde047';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillText(`নদী: ${riverBn} · সাবধানে চলুন`, 256, 145);
+
+  ctx.fillStyle = '#a7f3d0';
+  ctx.font = 'bold 20px Arial, sans-serif';
+  ctx.fillText('SPEED LIMIT 80 KM/H · NO STOPPING', 256, 205);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Creates Milestone Marker with Bengali Place Name
+ */
+export function createCustomMilestoneTexture(placeBn: string, km: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 256, 256);
+
+  ctx.fillStyle = '#111827';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px "SolaimanLipi", sans-serif';
+  ctx.fillText(placeBn, 128, 90);
+
+  ctx.fillStyle = '#dc2626';
+  ctx.font = 'black 64px sans-serif';
+  ctx.fillText(`${km}`, 128, 175);
+
+  ctx.fillStyle = '#4b5563';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.fillText('কি.মি.', 128, 225);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
